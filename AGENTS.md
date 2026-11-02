@@ -14,8 +14,8 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 - `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）、把终态 status 映射成 `completed` / `aborted` / `error`，并收集 result/error 帧的错误文本供分类。不碰进程。
 - `lib/classify.js`：纯函数失败分类。`classifyFailure()` 输出 `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`，`parseRetryAfterMs()` 从文本解析 retry-after / `Resets in XhYmZs`。零依赖、可独立单测。
 - `lib/client.js`：DSH 客户端面板（`sidebar.panellist` 入口 + `main` keyed slot）。lazy-CJS 格式（`window.__ModuleLoader__.load`），不需要打包器，只依赖 `react`。
-- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接与单任务串行队列（同一 Chrome profile 只允许一个实例），超时终止。
-- `scripts/gemini_research/*.py`：Playwright 持久化 Chrome profile 登录（`init_login.py`）与 Gemini 网页 Deep Research 自动化（`run_research.py`）。
+- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接与单任务串行队列（同一浏览器 profile 只允许一个实例），超时终止。
+- `scripts/gemini_research/*.py`：Playwright 持久化浏览器 profile 登录（`init_login.py`）与 Gemini 网页 Deep Research 自动化（`run_research.py`）；`browser.py` 解析系统默认浏览器（Chrome/Edge）作为 channel。
 - `lib/run.js`：单次子进程生命周期 + 可选重试。`antigravityArgv` 拼 argv（含 `--print-timeout` / `--json-schema` / `--add-dir`）、`textTask` 校验只收 text 块、`startAntigravityRun` 负责 spawn / 收流 / 终止清理 / 组装共享 run handle、`startAntigravityRunWithRetry` 在显式配置 `fallbackModel` / `retryOnRateLimit` 时做一次重试、`stripAnsi` 清理 stderr 转义码。
 - `lib/index.js`：cordis 插件入口。定义 `Config`（schemastery，字段：providerName / executable / model / effort / env / permissionMode / extraArgs / printTimeout / jsonSchema / addDirs / fallbackModel / retryOnRateLimit / disposeGraceMs / geminiProfileDir / geminiPython / geminiHeadless / geminiTimeoutMs）、实现 `AntigravityProvider`（`NO_START_CAPABILITIES`、`inheritsParentContext = false`）、`apply()` 注册到 `ctx.subagents` 并调用 `setupGeminiWeb`。
 - 数据流：`apply` → `provider.start` →（配置了 fallback/retry 时走 `startAntigravityRunWithRetry`）→ `startAntigravityRun` → spawn `agy` → `wire.js` 解析 stdout → `settleRunResult` 产出 `{ output, stopReason }`；失败由 `classifyFailure` 分类并写进诊断标签 `[kind]`。
@@ -34,7 +34,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 - CLI 的 `--mode` 还支持 `accept-edits`，但 `Config.permissionMode` 有意只暴露 `auto` / `dangerously-skip-permissions`。
 - **重试默认关闭**：`fallbackModel` / `retryOnRateLimit` 只在显式配置时生效。一次性委派自动重试会翻倍配额，`usage_error`（CLI exit 2）一律不重试。别把默认改成自动重试。
 - `--print-timeout`（1.1.28+）到期会返回**部分输出、在 stderr 打 warning 并以 exit 0 成功退出**，不是失败；`printTimeout` 只是兜底截断，不能据此判断任务真正完成。
-- **Gemini 网页调研严格串行**：同一个 `geminiProfileDir` 同时只能有一个 Chrome 实例；`lib/gemini-web.js` 用单任务队列保证这点，别改成并发。初始化登录必须 headed（可见窗口），调研默认 headless，二者共用同一个 profile。
+- **Gemini 网页调研严格串行**：同一个 `geminiProfileDir` 同时只能有一个浏览器实例；`lib/gemini-web.js` 用单任务队列保证这点，别改成并发。初始化登录必须 headed（可见窗口），调研默认 headless，二者共用同一个 profile，并使用系统默认浏览器（Chrome/Edge）。
 - **Gemini 网页自动化是 best-effort**：Google ToS 禁止自动化访问，可能触发风控/封号；选择器随网页改版会失效，脚本失败时在 profile 目录留 `debug-*.png`。不要把这条路径接进高频批量任务。
 
 ## 三处联动，改触发词要一起改
@@ -46,7 +46,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 ## 验证
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js   # 语法
-python -m py_compile scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py   # Python 语法
+python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py   # Python 语法
 node --test   # 单测（36 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
 
 # 协议解析冒烟（7 字节强制分片，模拟真实 chunk 边界）：期望 completed + 文本

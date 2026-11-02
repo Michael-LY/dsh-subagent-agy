@@ -1,4 +1,4 @@
-"""Open a visible Chrome window and persist a Google Gemini login profile.
+"""Open the system default browser and persist a Google Gemini login profile.
 
 Run once before using the Gemini web Deep Research panel. The script polls until
 the Gemini app looks signed in, then exits and leaves the persistent profile on
@@ -13,6 +13,8 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+
+from browser import browser_label, default_browser_channel
 
 GEMINI_URL = "https://gemini.google.com/app"
 EDITOR_SELECTOR = "rich-textarea div[contenteditable='true'], div.ql-editor"
@@ -46,12 +48,14 @@ def main():
     profile = os.path.abspath(args.profile)
     os.makedirs(profile, exist_ok=True)
     deadline = time.time() + max(30, args.timeout)
+    channel = default_browser_channel()
+    print(json.dumps({"browser": browser_label(channel)}, ensure_ascii=False), file=sys.stderr, flush=True)
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=profile,
             headless=False,
-            channel="chrome",
+            channel=channel,
             args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
             viewport={"width": 1280, "height": 860},
         )
@@ -67,10 +71,10 @@ def main():
                 if is_logged_in(page):
                     try:
                         with open(os.path.join(profile, "login-ok.json"), "w", encoding="utf-8") as handle:
-                            json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "url": page.url}, handle)
+                            json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "url": page.url, "browser": browser_label(channel)}, handle)
                     except Exception:
                         pass
-                    print(json.dumps({"ok": True, "url": page.url}, ensure_ascii=False), flush=True)
+                    print(json.dumps({"ok": True, "url": page.url, "browser": browser_label(channel)}, ensure_ascii=False), flush=True)
                     return 0
                 time.sleep(2)
 

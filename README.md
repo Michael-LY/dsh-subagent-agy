@@ -152,7 +152,7 @@ agy --print <prompt> --output-format stream-json --new-project `
 | `fallbackModel` | `string` (`min(1)`) | *无（不重试）* | 降级重试备用模型。首轮出现配额耗尽（`quota_exhausted`）或限流（`rate_limited`）时，用该模型重试一次。 |
 | `retryOnRateLimit` | `boolean` | `false` | 429 限流重试开关。首轮限流且未触发降级模型时，按提示时长退避（上限 15s）并用原模型重试一次。 |
 | `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。必须为正有限数且 ≤ `MAX_TIMER_DELAY_MS`。 |
-| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/chrome-profile` | Gemini 网页调研的持久化 Chrome profile 目录；登录态保存在这里。 |
+| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/chrome-profile` | Gemini 网页调研的持久化浏览器 profile 目录（目录名沿用 `chrome-profile`）；登录态保存在这里。 |
 | `geminiPython` | `string` (`min(1)`) | `python` | 运行 Playwright 脚本的 Python 可执行文件。 |
 | `geminiHeadless` | `boolean` | `true` | 调研时是否无头运行；初始化登录始终有头（可见窗口）。 |
 | `geminiTimeoutMs` | `number` | `900000` | 单次调研任务的硬超时（毫秒），默认 15 分钟。 |
@@ -252,7 +252,7 @@ dsh-subagent-antigravity/
 │   └── en.json                # 英文描述与触发词声明（agy、antigravity）
 ├── scripts/
 │   └── gemini_research/
-│       ├── init_login.py      # 可见 Chrome 手动登录并保存持久化 profile
+│       ├── init_login.py      # 系统默认浏览器手动登录并保存持久化 profile
 │       └── run_research.py    # Playwright 触发 Gemini 网页 Deep Research 并提取报告
 └── test/
     ├── classify.test.js       # 错误分类与延时解析单元测试（覆盖配额、429、exit 2 等）
@@ -321,14 +321,14 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 ### 8.1 组成
 
 - `lib/client.js`：侧边栏入口与面板 UI（主题输入、任务状态、报告展示与复制）。
-- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；单任务串行队列（同一 Chrome profile 只能一个实例），超时终止。
-- `scripts/gemini_research/init_login.py`：打开可见 Chrome，人工登录一次，保存持久化 profile。
+- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；单任务串行队列（同一浏览器 profile 只能一个实例），超时终止。
+- `scripts/gemini_research/init_login.py`：打开系统默认浏览器（Chrome/Edge），人工登录一次，保存持久化 profile。
 - `scripts/gemini_research/run_research.py`：Playwright 打开 Gemini → Tools → Deep Research → 提交主题 → 等研究计划 → 点 Start research → 轮询报告 → 提取正文。
 
 ### 8.2 首次使用
 
-1. 确认本机 `python` 与 `playwright` 可用：`pip install playwright`（使用系统 Chrome，不需要 `playwright install`）。
-2. 侧边栏打开「Gemini 调研」→ 点「初始化登录」→ 在弹出的 Chrome 里登录 Google AI Pro 账号。
+1. 确认本机 `python` 与 `playwright` 可用：`pip install playwright`（使用系统默认浏览器 Chrome/Edge，不需要 `playwright install`）。
+2. 侧边栏打开「Gemini 调研」→ 点「初始化登录」→ 在弹出的系统默认浏览器里登录 Google AI Pro 账号。
 3. 回到面板填主题 →「开始 Deep Research」。
 
 ### 8.3 风险与边界

@@ -1,4 +1,4 @@
-"""Trigger Gemini web Deep Research with a persisted Chrome profile.
+"""Trigger Gemini web Deep Research with a persisted browser profile.
 
 The panel passes the research topic through --topic (or --topic-file) and reads
 a small JSON file written by --out. The flow is deliberately tolerant of UI
@@ -14,6 +14,8 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+
+from browser import browser_label, default_browser_channel
 
 GEMINI_URL = "https://gemini.google.com/app"
 EDITOR_SELECTOR = "rich-textarea div[contenteditable='true'], div.ql-editor"
@@ -262,12 +264,14 @@ def main():
 
     profile = os.path.abspath(args.profile)
     os.makedirs(profile, exist_ok=True)
+    channel = default_browser_channel()
+    log(f"browser: {browser_label(channel)}")
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=profile,
             headless=bool(args.headless),
-            channel="chrome",
+            channel=channel,
             args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
             viewport={"width": 1440, "height": 960},
         )

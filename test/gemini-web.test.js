@@ -99,6 +99,7 @@ test('setupGeminiWeb: /job 找不到任务返回 404', async () => {
 	const sctx = {
 		effect(fn) { fn(); },
 		webServer: { register(entry) { routes.push(entry); return () => {}; } },
+		tools: { register() { return () => {}; } },
 		on() { return () => {}; },
 	};
 	const ctx = { inject(_services, callback) { callback(sctx); } };

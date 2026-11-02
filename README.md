@@ -322,6 +322,7 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 
 - `lib/client.js`：侧边栏入口与面板 UI（主题输入、任务状态、报告展示与复制）。
 - `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；单任务串行队列（同一浏览器 profile 只能一个实例），超时终止。
+- `gemini_web_research`：注册到 `ctx.tools` 的模型可见工具；任意对话里说「用 Gemini Deep Research 调研……」即可调用，和面板共用同一队列，等待报告返回。
 - `scripts/gemini_research/init_login.py`：打开系统默认浏览器（Chrome/Edge），人工登录一次，保存持久化 profile。
 - `scripts/gemini_research/run_research.py`：Playwright 打开 Gemini → Tools → Deep Research → 提交主题 → 等研究计划 → 点 Start research → 轮询报告 → 提取正文。
 
@@ -331,7 +332,9 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 2. 侧边栏打开「Gemini 调研」→ 点「初始化登录」→ 在弹出的系统默认浏览器里登录 Google AI Pro 账号。
 3. 回到面板填主题 →「开始 Deep Research」。
 
-### 8.3 风险与边界
+**对话内使用**：登录态就绪后，在任意聊天里直接说「用 Gemini Deep Research 调研……」；模型会调用 `gemini_web_research` 工具，等报告生成后把正文返回当前对话。工具和面板共用同一个任务队列，不会并发打开两个浏览器。
+
+### 8.4 风险与边界
 
 - Google 服务条款禁止自动化访问；网页端自动化可能触发风控甚至封号，建议使用专用账号并控制频率，不要拿主账号批量跑。
 - AI Pro 的 Deep Research 约为每天 20 次；单次通常 5–10 分钟。

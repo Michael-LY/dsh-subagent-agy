@@ -14,7 +14,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 - `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）、把终态 status 映射成 `completed` / `aborted` / `error`，并收集 result/error 帧的错误文本供分类。不碰进程。
 - `lib/classify.js`：纯函数失败分类。`classifyFailure()` 输出 `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`，`parseRetryAfterMs()` 从文本解析 retry-after / `Resets in XhYmZs`。零依赖、可独立单测。
 - `lib/client.js`：DSH 客户端面板（`sidebar.panellist` 入口 + `main` keyed slot）。lazy-CJS 格式（`window.__ModuleLoader__.load`），不需要打包器，只依赖 `react`。
-- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接与单任务串行队列（同一浏览器 profile 只允许一个实例），超时终止。
+- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接与单任务串行队列（同一浏览器 profile 只允许一个实例），超时终止；同时注册模型可见工具 `gemini_web_research`（对话内直接调用，等待报告返回）。
 - `scripts/gemini_research/*.py`：Playwright 持久化浏览器 profile 登录（`init_login.py`）与 Gemini 网页 Deep Research 自动化（`run_research.py`）；`browser.py` 解析系统默认浏览器（Chrome/Edge）作为 channel。
 - `lib/run.js`：单次子进程生命周期 + 可选重试。`antigravityArgv` 拼 argv（含 `--print-timeout` / `--json-schema` / `--add-dir`）、`textTask` 校验只收 text 块、`startAntigravityRun` 负责 spawn / 收流 / 终止清理 / 组装共享 run handle、`startAntigravityRunWithRetry` 在显式配置 `fallbackModel` / `retryOnRateLimit` 时做一次重试、`stripAnsi` 清理 stderr 转义码。
 - `lib/index.js`：cordis 插件入口。定义 `Config`（schemastery，字段：providerName / executable / model / effort / env / permissionMode / extraArgs / printTimeout / jsonSchema / addDirs / fallbackModel / retryOnRateLimit / disposeGraceMs / geminiProfileDir / geminiPython / geminiHeadless / geminiTimeoutMs）、实现 `AntigravityProvider`（`NO_START_CAPABILITIES`、`inheritsParentContext = false`）、`apply()` 注册到 `ctx.subagents` 并调用 `setupGeminiWeb`。

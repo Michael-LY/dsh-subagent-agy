@@ -5,6 +5,9 @@
   "private": true,
   "type": "module",
   "main": "lib/index.js",
+  "scripts": {
+    "test": "node --test"
+  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",

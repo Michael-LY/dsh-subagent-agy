@@ -58,11 +58,17 @@
 ### E. stderr ANSI 清理（低价值 / 零风险 / 极小工作量）
 - `lib/index.js#startAntigravityRun` 的 `writeStderr` 回调里，先 `stripAnsi` 再 `process.stderr.write`，避免日志被转义码污染。
 
-### F. 配额/限流检测与降级重试（中价值 / 中风险 / 中工作量，建议 v2）
-- 现状：`settleRunResult` 已能给出 `stopReason=error` 与诊断。
-- 方案：`Config` 增 `fallbackModel`；首轮 `settled.stopReason==='error'` 且诊断匹配 `/rate\s*limit|quota|429|exhaust/i` 时，以 `fallbackModel` 重跑一次。
-- 风险：一次性委派下自动重试会翻倍配额；且要在 `provider.start` 外层包重试，需小心 run handle 的 signal/teardown 语义。
-- 更轻量替代：**不自动重试**，只把「配额耗尽」识别成明确诊断（`quota_exhausted` 标记）交上层决策。
+### F. 配额/限流检测与降级重试（已评估：默认不自动重试，只做诊断识别）
+
+**评估结论（基于联网案例）**：值得做「识别」，不建议默认「自动重试」。
+
+- 真实错误形态：`Model quota limit exceeded...`、`⚠ Individual quota reached. Resets in XhYmZs.`、`429` rate limit；CLI 另有 `/usage`(`/quota`) 命令可查配额。
+- print 模式**用法错误 exit 2**；且 1.1.28+ **`--print-timeout` 超时以 exit 0 返回部分输出**——退出码与 JSON 必须一起看。
+- 自动降级的风险：one-shot 语义下重试会翻倍配额；若配额是账号级耗尽，换模型（同属 Antigravity 配额池）多半仍失败。
+- 建议实现（v2，opt-in）：
+  1. 在诊断层给错误打标签：`rate_limited`（可解析 retry-after/重置时间时）vs `quota_exhausted` vs `usage_error`(exit 2)。
+  2. `Config` 增 `fallbackModel`（仅显式配置才生效）与 `retryOnRateLimit`（429 且可解析短重置时间时退避重试 1 次）。
+  3. 默认关闭；只把 `quota_exhausted` 作为明确诊断上报，交上层决策。
 
 ## 4. 明确不采纳（附原因）
 
@@ -93,3 +99,15 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js
 | D `--add-dir` | 中低 | 低 | 小 | 次做 |
 | E stderr ANSI | 低 | 无 | 极小 | 顺手 |
 | F 配额降级 | 中 | 中 | 中 | v2 或只做诊断 |
+
+---
+
+## 7. 参考案例（联网）
+
+- Antigravity Lab：Running Antigravity CLI Headless（exit codes / idempotency / timeouts / output parsing）
+  https://antigravitylab.net/en/articles/integrations/antigravity-cli-headless-non-interactive-ci-design
+- Antigravity Lab 相关文章：1.1.28 起 `--print-timeout` 超时以成功退出（部分输出）
+- Antigravity CLI `/usage`(/quota) 命令：https://antigravity.google/docs/cli/commands/usage/
+- Google AI Dev Forum：Persistent 429 / Model quota limit exceeded：https://discuss.ai.google.dev/t/antigravity-paid-tier-1-not-recognized-persistent-429-rate-limit-errors-on-project/116558
+- GitHub gemini-cli discussion #27307（Individual quota reached, resets in ...）：https://github.com/google-gemini/gemini-cli/discussions/27307
+- Reddit：Why does Antigravity CLI burn through quotas：https://www.reddit.com/r/GeminiCLI/comments/1tlqd44/why_does_antigravity_cli_burn_through_quotas_so/

@@ -41,6 +41,9 @@ stdout 为逐行 NDJSON，插件只消费三种 envelope：
     model: gemini-4-argon-high                          # 可选，取值来自 `agy models`
     effort: high                                        # low|medium|high|xhigh|max，可选
     permissionMode: dangerously-skip-permissions        # 默认 | auto
+    printTimeout: 180s                                   # 可选，--print-timeout（Go duration；省略=等到本轮结束）
+    jsonSchema: ''                                       # 可选，--json-schema（内联 JSON 或文件路径）
+    addDirs: []                                          # 可选，--add-dir 追加工作目录
     extraArgs: []                                       # 追加参数
     env: {}                                             # 追加环境变量
     disposeGraceMs: 3000
@@ -64,6 +67,9 @@ stdout 为逐行 NDJSON，插件只消费三种 envelope：
   插件不会替你判断登录状态，建议先跑一次 `agy --print "hi"` 确认。
 - **日志会写用户目录**：`agy` 会尝试写 `~/.gemini/antigravity-cli/{log,crashes}`；
   在 DSH 沙箱下写被拒时它只打 warning，不影响运行。
+- **`--print-timeout` 语义（1.1.28+）**：超时到期会返回**部分输出并以 exit 0 成功退出**，不是失败。
+  因此 `printTimeout` 只是兜底截断，不能据此判断任务是否真正完成；需要严格完成判定时请结合结果内容校验。
+- **退出码与输出一起看**：print 模式用法错误为 exit 2；配额/限流另有表现。插件以终态 `result` 帧与退出码共同判定，不单凭一个信号下结论。
 
 ## 安装状态
 

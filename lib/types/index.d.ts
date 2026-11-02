@@ -31,6 +31,12 @@ export interface Config {
 	permissionMode?: AntigravityPermissionMode;
 	/** Extra CLI arguments appended verbatim. */
 	extraArgs?: string[];
+	/** Go-style duration for `--print-timeout` (e.g. "180s", "10m"); omitted to wait until the turn completes. */
+	printTimeout?: string;
+	/** JSON schema (inline or file path) for `--json-schema`, constraining the final structured result. */
+	jsonSchema?: string;
+	/** Extra workspace directories passed as repeatable `--add-dir`. */
+	addDirs?: string[];
 	/** Grace in milliseconds between managed-range termination tiers. */
 	disposeGraceMs?: number;
 }

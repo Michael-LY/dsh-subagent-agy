@@ -3,7 +3,7 @@
 DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`。
 
 ## 仓库形态
-- 纯 ESM JavaScript：无构建、无 lint、无测试、无本地 `node_modules`。
+- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；已有 `node:test` 单测（`test/*.test.js`，覆盖 `wire.js` / `classify.js`，共 28 用例）。
 - **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-antigravity.git`；主干 `master`，开发分支 `feature/headless-scripting`。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
@@ -30,7 +30,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 - `NO_START_CAPABILITIES` + `inheritsParentContext = false` 是 Antigravity 只有 CLI、没有 app-server/SDK 的直接后果；因此 `cordis.patch.yml` 里必须配 `maxDepth: provider-managed`。
 - CLI 的 `--mode` 还支持 `accept-edits`，但 `Config.permissionMode` 有意只暴露 `auto` / `dangerously-skip-permissions`。
 - **重试默认关闭**：`fallbackModel` / `retryOnRateLimit` 只在显式配置时生效。一次性委派自动重试会翻倍配额，`usage_error`（CLI exit 2）一律不重试。别把默认改成自动重试。
-- `--print-timeout`（1.1.28+）到期会返回**部分输出并以 exit 0 成功退出**，不是失败；`printTimeout` 只是兜底截断，不能据此判断任务真正完成。
+- `--print-timeout`（1.1.28+）到期会返回**部分输出、在 stderr 打 warning 并以 exit 0 成功退出**，不是失败；`printTimeout` 只是兜底截断，不能据此判断任务真正完成。
 
 ## 三处联动，改触发词要一起改
 1. `cordis.patch.yml`：`provider: antigravity` 必须等于插件注册的 `providerName`；`toolName: subagent_agy` 才是模型看到的工具名。
@@ -41,6 +41,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 ## 验证
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js   # 语法
+node --test   # 单测（28 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
 
 # 协议解析冒烟（7 字节强制分片，模拟真实 chunk 边界）：期望 completed + 文本
 node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new AntigravityStream('t');const t=[JSON.stringify({event:'init',conversation_id:'c1'}),JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta:'par'}}),JSON.stringify({event:'result',result:{status:'SUCCESS',response:'partial answer'}})].join('\n')+'\n';for(let i=0;i<t.length;i+=7)s.push(t.slice(i,i+7));s.end();console.log(s.result(),s.conversationId)})"

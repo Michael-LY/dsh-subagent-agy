@@ -1,120 +1,320 @@
 # dsh-subagent-antigravity
 
-把一次性任务委派给本机 **Antigravity CLI（`agy`）** 的 DSH 子智能体插件。
+将一次性任务委派给本机 **Antigravity CLI（`agy`）** 的 DSH（DeepSeek Harness）子智能体插件。
 
-与官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：注册一个外部
-（one-shot）subagent provider，再由 `@deepseek-ai/dsh-tool-subagent` 挂出一个
-模型可见工具 `subagent_agy`（触发词：**agy** 或 **antigravity**，不区分大小写）。
+与 DSH 官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：通过注册外部单次执行（one-shot）subagent provider，配合 `@deepseek-ai/dsh-tool-subagent` 向模型暴露工具 `subagent_agy`（触发关键词：`agy`、`antigravity`，不区分大小写）。
 
-工具本身不能「听」关键词——关键词是模型对工具的选择依据，因此触发词需要两处落地：
+---
 
-1. **插件侧**（本仓库）：`locale/zh.json`、`locale/en.json` 的 `description` 列出 `agy`、`antigravity`，
-   它们是插件在设置 / 市场里的展示文案。
-2. **指令侧**（`~/.dsh/AGENTS.md`）：写明 `agy` 与 `antigravity` 都指向 `subagent_agy`，
-   模型在系统提示里读到后才真正会在用户说这两个词时调用该工具。
+## 目录
 
-## 协议选型
+- [1. 项目简介与定位](#1-项目简介与定位)
+- [2. 安装与部署](#2-安装与部署)
+- [3. 协议（print + stream-json）](#3-协议print--stream-json)
+- [4. 配置全字段说明](#4-配置全字段说明)
+- [5. 失败分类与重试机制](#5-失败分类与重试机制)
+- [6. 目录结构与模块分工](#6-目录结构与模块分工)
+- [7. 验证与测试方法](#7-验证与测试方法)
+- [8. 已知限制与注意事项](#8-已知限制与注意事项)
 
-Antigravity 没有 app-server / SDK 协议，只有 CLI。因此本插件走 **print + stream-json**：
+---
 
+## 1. 项目简介与定位
+
+### 1.1 背景与定位
+
+Antigravity（`agy`）是 Google 提供的 Agent CLI 工具，没有对外开放类似 app-server 或客户端 SDK 的长连接 RPC 服务，只提供命令行交互与无头脚本模式。
+
+本插件为 DSH 提供原生接入 Antigravity 的能力：
+
+- **单次委派（One-shot External Provider）**：在宿主会话的工作区下 spawn 独立的 `agy` 子进程，执行单个独立任务后收集结果并退出。
+- **上下文完全隔离**：每次任务强制附加 `--new-project`，不复用已有项目，不污染用户本地会话。
+- **环境清理与解耦**：清理父级 CLI 注入的环境变量，阻断会话劫持。
+- **多模型与推理档位透传**：支持通过 Antigravity 调度 Gemini 4 Argon、Gemini 3.8 Flash、Claude 5.5 系列及开源大模型。
+
+### 1.2 触发词联动机制
+
+工具本身无法主动监听关键词，模型选择调用 `subagent_agy` 依赖三处联动配置：
+
+1. **插件国际化文案（本仓库）**：`locale/zh.json` 与 `locale/en.json` 的 `description` 中明确列出 `agy` 与 `antigravity`，作为插件注册时的元数据展示。
+2. **Cordis 工具定义（本仓库）**：`cordis.patch.yml` 声明 provider 为 `antigravity`，映射暴露的工具名为 `subagent_agy`，并指定 `maxDepth: provider-managed`。
+3. **系统提示词（宿主配置）**：`%USERPROFILE%\.dsh\AGENTS.md`（仓库外）明确提示模型当用户提及 "agy" 或 "antigravity" 时调用 `subagent_agy` 工具。
+
+---
+
+## 2. 安装与部署
+
+本插件已作为本地依赖接入本机的 DSH 桌面端 Profile（`%USERPROFILE%\.dsh\profiles\desktop`）。
+
+### 2.1 依赖关系与 Profile 配置
+
+在 `%USERPROFILE%\.dsh\profiles\desktop\package.json` 中：
+
+```json
+{
+  "dependencies": {
+    "dsh-subagent-antigravity": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-antigravity"
+  }
+}
 ```
-agy --print <prompt> --output-format stream-json --new-project [--model M] [--effort E] [--dangerously-skip-permissions | --mode auto]
+
+在 Profile 的配置清单中，已将 `"dsh-subagent-antigravity"` 加入 `dsh.profile.bundles`。
+
+### 2.2 硬链接机制与同步注意
+
+- 在 Profile 安装后，`node_modules/dsh-subagent-antigravity/*` 文件以**硬链接（Hardlink）**方式映射到本代码仓库对应文件。
+- **同步规则**：
+  - 原地修改现有文件（如修改 `lib/run.js`、`lib/wire.js` 的内容）会通过硬链接实时生效。
+  - **新增文件不会自动同步**到 profile 的 `node_modules`。
+  - 编辑器整体替换文件保存（原子写入）可能会切断硬链接。
+- **重新同步**：
+  若新增了文件或需要重建硬链接，请执行：
+  ```powershell
+  cd "$env:USERPROFILE\.dsh\profiles\desktop"
+  pnpm install
+  ```
+  > **注意**：DSH 内置沙箱可能会限制 pnpm 写入全局 store，建议在真实的独立终端中执行 `pnpm install`。完成后重启 DSH GUI 即可载入最新代码。
+
+---
+
+## 3. 协议（print + stream-json）
+
+### 3.1 命令行调用原型
+
+插件内部拼装并执行的核心命令行格式如下：
+
+```powershell
+agy --print <prompt> --output-format stream-json --new-project `
+    [--model <model>] [--effort <effort>] `
+    (--dangerously-skip-permissions | --mode auto) `
+    [--print-timeout <duration>] [--json-schema <schema>] `
+    [--add-dir <dir> ...] [extraArgs ...]
 ```
 
-stdout 为逐行 NDJSON，插件只消费三种 envelope：
+### 3.2 NDJSON 流式帧解析（`lib/wire.js`）
 
-| event | 用途 |
-|---|---|
-| `init` | 记录 `conversation_id` |
-| `step_update` (`step_type: agent_response`) | 累积 `text_delta` 作为兜底答案 |
-| `result` | **权威答案**：`status` + `response` |
+子进程的 `stdout` 输出逐行 NDJSON，由 `AntigravityStream` 进行行切分与缓冲（单帧缓冲上限 `MAX_FRAME_BYTES = 32MB`）。插件处理以下四类 Envelope：
 
-`--new-project` 保证每次委派是全新会话，不污染、不复用用户已有的 Antigravity 项目。
+| event | 关键字段 | 作用与解析逻辑 |
+|---|---|---|
+| `init` | `conversation_id` | 记录 CLI 分配的会话 ID（仅记录首次出现的 ID），用于失败诊断标签。 |
+| `step_update` | `step_update.step_type`<br>`step_update.text_delta` | 当 `step_type === 'agent_response'` 时累加 `text_delta`，作为权威答案缺失时的兜底文本。 |
+| `result` | `result.status`<br>`result.response` | **权威终态帧**：`status` 支持 `SUCCESS`、`ERROR`、`FAILURE`、`CANCELED`、`CANCELLED`、`INTERRUPTED`。非 SUCCESS 时标记 `product-error` 并记录错误文本。 |
+| `error` | `error` | 异常 Envelope，记录到 `malformed` 并累积到错误文本，供失败分类器分析。 |
 
-## 配置
+### 3.3 答案决策与状态映射
+
+- **答案提取逻辑**：优先取终态 `result.response`；若缺失或为空，则使用 `step_update` 累加的 `text_delta` 作为兜底；去除前后空白后包装为 `[{ type: 'text', text: answer }]`。
+- **终态停机原因（`stopReason`）映射**：
+  - `result.status === 'SUCCESS'` → `'completed'`
+  - `result.status` 为 `CANCELED` / `CANCELLED` / `INTERRUPTED` → `'aborted'`
+  - 出现未知状态、未观测到终态帧，或状态为 `ERROR` / `FAILURE` → `'error'`
+
+---
+
+## 4. 配置全字段说明
+
+在 DSH 的 `cordis.patch.yml` 中支持对 `subagent-antigravity` 进行配置覆盖。所有字段经由 `@deepseek-ai/schemastery` 进行模式校验：
 
 ```yaml
-- id: subagent-antigravity
-  name: dsh-subagent-antigravity
-  config:
-    executable: 'C:/Users/<you>/.gemini/bin/agy.exe'    # 默认 %USERPROFILE%/.gemini/bin/agy.exe
-    model: gemini-4-argon-high                          # 可选，取值来自 `agy models`
-    effort: high                                        # low|medium|high|xhigh|max，可选
-    permissionMode: dangerously-skip-permissions        # 默认 | auto
-    printTimeout: 180s                                   # 可选，--print-timeout（Go duration；省略=等到本轮结束）
-    jsonSchema: ''                                       # 可选，--json-schema（内联 JSON 或文件路径）
-    addDirs: []                                          # 可选，--add-dir 追加工作目录
-    extraArgs: []                                       # 追加参数
-    fallbackModel: gemini-3.8-flash-high                # 可选，配额/限流失败时降级重试一次
-    retryOnRateLimit: false                              # 可选，429 限流退避重试一次（默认关闭）
-    env: {}                                             # 追加环境变量
-    disposeGraceMs: 3000
+- insert:
+    - id: subagent-antigravity
+      name: 'dsh-subagent-antigravity'
+      config:
+        providerName: antigravity
+        executable: 'C:/Users/moyi_/.gemini/bin/agy.exe'
+        model: gemini-4-argon-high
+        effort: high
+        permissionMode: dangerously-skip-permissions
+        printTimeout: 180s
+        # jsonSchema: '{"type": "object"}'   # 可选，内联 JSON 或文件路径；不要传空字符串（min(1) 校验）
+        addDirs: []
+        fallbackModel: gemini-3.8-flash-high
+        retryOnRateLimit: false
+        disposeGraceMs: 3000
+        extraArgs: []
+        env: {}
 ```
 
-`agy models` 列出的 id 自带档位后缀（如 `gemini-4-argon-high`）；`model` 省略则用 CLI 当前设置。
+### 4.1 字段定义详解
 
-`permissionMode`：
-- `dangerously-skip-permissions`（默认）→ `--dangerously-skip-permissions`。
-  print 模式下所有工具确认都会被软拒，不跳过权限的子级读不了工作区，
-  所以这是唯一能真正干活的取值；代价是子级对本机有完全权限。
-- `auto` → `--mode auto`，保留权限边界，只适合完全不需要工具的纯问答 prompt。
+| 字段名 | 类型 / 校验规则 | 默认值 | 说明与行为 |
+|---|---|---|---|
+| `providerName` | `string` (`min(1)`) | `'antigravity'` | 注册到 `ctx.subagents` 的服务标识名，须与工具绑定的 provider 名称一致。 |
+| `executable` | `string` (`min(1)`) | `%USERPROFILE%/.gemini/bin/agy.exe` | 本机 `agy` 可执行文件绝对路径。插件启动任务前会用 `existsSync` 校验其存在性。 |
+| `model` | `string` (`min(1)`) | *无（继承 CLI）* | 调用的模型名称（取值来自 `agy models`，如 `gemini-4-argon-high`、`gemini-3.8-flash-high`、`claude-opus-5-5-high` 等）。不填则沿用 CLI 内部默认设置。 |
+| `effort` | `'low' \| 'medium' \| 'high' \| 'xhigh' \| 'max'` | *无* | 推理/思考档位（映射 `--effort <val>`）。注意部分模型 ID 自带档位后缀，二者叠加时可能存在覆盖。 |
+| `permissionMode` | `'dangerously-skip-permissions' \| 'auto'` | `'dangerously-skip-permissions'` | **核心权限开关**：<br>• `dangerously-skip-permissions`（推荐/默认）：映射为 `--dangerously-skip-permissions`。非交互 print 模式下工具确认会被软拒，必须跳过权限才能操作工作区文件；<br>• `auto`：映射为 `--mode auto`，保留权限拦截，仅适合不需要读写工作区文件的纯问答场景。 |
+| `printTimeout` | `string` (`min(1)`) | *无（无限等待）* | 原生执行超时（Go duration 格式，如 `"180s"`、`"10m"`），映射为 `--print-timeout <val>`。**注意：CLI 到期超时后输出部分结果、在 stderr 打 warning，并以 exit 0 退出**，不是失败。 |
+| `jsonSchema` | `string` (`min(1)`) | *无* | 结构化输出约束，映射为 `--json-schema <val>`。支持内联 JSON Schema 字符串或本地 schema 文件路径。 |
+| `addDirs` | `string[]` | *无* | 附加只读工作区目录列表。每个路径映射为一个 `--add-dir <dir>` 参数。 |
+| `fallbackModel` | `string` (`min(1)`) | *无（不重试）* | 降级重试备用模型。首轮出现配额耗尽（`quota_exhausted`）或限流（`rate_limited`）时，用该模型重试一次。 |
+| `retryOnRateLimit` | `boolean` | `false` | 429 限流重试开关。首轮限流且未触发降级模型时，按提示时长退避（上限 15s）并用原模型重试一次。 |
+| `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。必须为正有限数且 ≤ `MAX_TIMER_DELAY_MS`。 |
+| `extraArgs` | `string[]` | `[]` | 直接透传给 `agy` 进程的追加命令行参数数组。 |
+| `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理过的环境变量字典之上。 |
 
-## 配额与限流：识别与可选降级
+### 4.2 会话隔离与环境变量清理（`SCRUBBED_ENV`）
 
-插件把失败运行分类（`quota_exhausted` / `rate_limited` / `usage_error` / `unknown`），并在最末诊断里以 `[...]` 标签体现。
+为防止子进程通过环境变量意外继承或挂载到宿主的父级 CLI 会话，插件会在启动子进程前，强制将以下环境变量设置为空字符串 `''`：
 
-- 默认**只识别不重试**：一次性委派自动重试会翻倍配额，且账号级配额耗尽换模型多半无效。
-- 显式开启降级：配置 `fallbackModel`（如 `gemini-3.8-flash-high`），本轮因 `quota_exhausted` 或 `rate_limited` 失败时用该模型重跑**一次**。
-- 显式开启限流重试：`retryOnRateLimit: true`，本轮为 `rate_limited`（429）时按提示退避（上限 15s）用**原模型**重试一次。
-- 命中 `usage_error`（CLI 退出码 2，参数/用法错误）不重试。
-## 已知限制
+- `CLAUDECODE`
+- `CLAUDE_CODE_ENTRYPOINT`
+- `GEMINI_CLI`
+- `ANTIGRAVITY_SESSION_ID`
 
-- **一次性执行**：Antigravity 没有后续消息通道，子级不接受 `send_message`，只能看结果。
-- **不继承父上下文**：子级是全新进程，prompt 必须自包含。
-- **能力集为 `NO_START_CAPABILITIES`**：不支持 `agentOptions`（子模型路由由本插件 `model` 配置决定）、
-  `outputSchema`、`agentPreset`、`depthLimit`。工具侧因此配 `maxDepth: provider-managed`。
-- **需要先登录 Antigravity**：未登录时 `agy` 可能仍返回兜底答案，但能力/模型会静默降级。
-  插件不会替你判断登录状态，建议先跑一次 `agy --print "hi"` 确认。
-- **日志会写用户目录**：`agy` 会尝试写 `~/.gemini/antigravity-cli/{log,crashes}`；
-  在 DSH 沙箱下写被拒时它只打 warning，不影响运行。
-- **`--print-timeout` 语义（1.1.28+）**：超时到期会返回**部分输出并以 exit 0 成功退出**，不是失败。
-  因此 `printTimeout` 只是兜底截断，不能据此判断任务是否真正完成；需要严格完成判定时请结合结果内容校验。
-- **退出码与输出一起看**：print 模式用法错误为 exit 2；配额/限流另有表现。插件以终态 `result` 帧与退出码共同判定，不单凭一个信号下结论。
+用户自定义的 `env` 配置会在清理后再合并覆盖。
 
-## 安装状态
+---
 
-已经在 `~/.dsh/profiles/desktop`（本机在用的 profile）里装好并启用：
+## 5. 失败分类与重试机制
 
-- `dependencies` 里有 `"dsh-subagent-antigravity": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-antigravity"`
-- `dsh.profile.bundles` 里有 `"dsh-subagent-antigravity"`
+一次性委派子进程自动重试可能消耗双倍配额，且账号级配额耗尽通常无法通过重试恢复，因此插件默认策略为：**精确识别分类，默认不自动重试**。
 
-改完本仓库后需要重新同步一次：
+### 5.1 失败分类器（`lib/classify.js`）
 
-```bash
-cd ~/.dsh/profiles/desktop
-pnpm install
+`classifyFailure(text, outcome)` 结合子进程退出结果（`outcome`）与标准错误/终态错误文本（`text`）进行纯函数分类：
+
+```
+                ┌───────────────────────────┐
+                │ outcome.exitCode === 2 ?  │── 是 ──> usage_error（CLI exit 2，绝不重试）
+                └─────────────┬─────────────┘
+                              │ 否
+                ┌─────────────▼─────────────┐
+                │ 匹配 429 / rate limit /   │── 是 ──> rate_limited (+ 可选 retryAfterMs)
+                │ resource exhausted / ...  │
+                └─────────────┬─────────────┘
+                              │ 否
+                ┌─────────────▼─────────────┐
+                │ 匹配 quota / out of       │── 是 ──> quota_exhausted (+ 可选 retryAfterMs)
+                │ credits / insufficient ...│
+                └─────────────┬─────────────┘
+                              │ 否
+                              ▼
+                           unknown
 ```
 
-profile 里 `node_modules/dsh-subagent-antigravity/*` 是**硬链接**到本仓库
-（`fsutil hardlink list lib/run.js` 可验证）：改已有文件的内容会直接同步过去，
-但**新增文件不会**，并且整体替换文件的保存方式（原子写）会断开硬链接。
-所以新增文件、或想确认 profile 里是最新代码时，跑一次 `pnpm install`。
+> 说明：`exit 2` 只在 stream-json 输入协议的 control_request/response 或 CLI 自处理 slash 命令时出现；插件走 `-p` 文本 prompt 基本碰不到，未知 `--model` 等用法问题多为 exit 1。
 
-DSH 的文件沙箱会拦住 pnpm 写全局 store，若在 DSH 内失败就换真实终端跑。
-装完重启 GUI，`subagent_agy` 才带新代码。
+### 5.2 等待时长解析（`parseRetryAfterMs`）
 
-## 验证
+从错误文本中自动解析恢复时间：
 
-```bash
-# 1. 语法（仓库没有构建/测试，这是唯一必需的一步）
-node --check lib/index.js && node --check lib/run.js && node --check lib/wire.js
+- 匹配 `retry-after: <seconds>` 模式：换算为毫秒，最大截断为 1 小时（3600 秒）。
+- 匹配 `Resets in XhYmZs` / `resets in Xm` 模式：换算为对应毫秒数。
 
-# 2. CLI 本身能跑（参数与插件默认一致）
-"C:/Users/moyi_/.gemini/bin/agy.exe" --print "Say OK" --output-format stream-json --new-project --dangerously-skip-permissions
+### 5.3 诊断标签与重试语义（`lib/run.js`）
 
-# 3. 期望看到以 {"event":"result",...} 结尾、status 为 SUCCESS
+执行失败时，诊断信息会追加格式化标签：
+
+`subagent-antigravity: Product subagent failure (...) [quota_exhausted] (conversation: <id>)`
+
+**重试决策流**（由 `startAntigravityRunWithRetry` 控制，最多重试 1 次）：
+
+1. **Fallback 降级模型重试**：
+   - 触发条件：显式配置了 `fallbackModel`，且首轮失败分类为 `quota_exhausted` 或 `rate_limited`。
+   - 行为：释放当前子进程，改用 `spec.fallbackModel` 作为 `--model` 参数立即重跑一次。
+2. **限流退避重试**：
+   - 触发条件：未触发 Fallback 且配置了 `retryOnRateLimit: true`，首轮失败分类为 `rate_limited`。
+   - 行为：等待退避时长（解析到 `retryAfterMs` 就用它，否则默认 2s，统一上限 15s），使用原参数重跑一次。
+3. **用法错误与未知错误不重试**：
+   - 命中 `usage_error` 或 `unknown` 时直接报告失败，避免无效重试。
+
+---
+
+## 6. 目录结构与模块分工
+
+```
+dsh-subagent-antigravity/
+├── AGENTS.md                  # 开发与维护核心规范（触发词、硬链接、不可触碰的设计原则）
+├── README.md                  # 项目详细说明文档（本文件）
+├── cordis.patch.yml           # DSH Cordis 插件插入补丁配置（声明 provider 与 tool）
+├── package.json               # ESM 模块声明、peerDependencies 与 files 白名单
+├── icon.svg                   # DSH 插件图标
+├── docs/
+│   └── headless-scripting-plan.md  # CLI 原生能力调研与 headless 结合方案记录
+├── lib/
+│   ├── index.js               # Cordis 插件入口：定义 Config、实现 Provider、注册 apply
+│   ├── run.js                 # 进程生命周期：argv 组装、spawn、流驱动、可选重试与退出结算
+│   ├── wire.js                # 纯 NDJSON 流解析器：行缓冲、Envelope 状态提取、权威答案决策
+│   ├── classify.js            # 纯函数错误分类：退出码判定、429/配额正则匹配、重试时间解析
+│   └── types/
+│       └── index.d.ts         # 手写 TypeScript 类型定义（Config / Export 声明）
+├── locale/
+│   ├── zh.json                # 中文描述与触发词声明（agy、antigravity）
+│   └── en.json                # 英文描述与触发词声明（agy、antigravity）
+└── test/
+    ├── classify.test.js       # 错误分类与延时解析单元测试（覆盖配额、429、exit 2 等）
+    └── wire.test.js           # 协议解析测试（7 字节分片重组、兜底答案、Envelope 校验等）
 ```
 
-已验证：上述命令在本机返回 `{"status":"SUCCESS","response":"OK\n"}`，
-且 `lib/wire.js` 对真实输出（按 7 字节强制分片）能正确重组帧并提取答案——
-协议层的最小冒烟命令见 `AGENTS.md` 的「验证」段。
+---
+
+## 7. 验证与测试方法
+
+### 7.1 单元测试套件
+
+项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 28 个用例：
+
+```powershell
+# 运行全部单元测试（覆盖 classify 与 wire 解析）
+npm test
+# 或直接执行：
+node --test
+```
+
+> DSH 受限 shell 内若报 `spawn EPERM`（测试运行器开子进程管道被沙箱拦截，不是用例失败），改用单进程模式：`node --test --test-isolation=none`。
+
+### 7.2 模块语法检查
+
+确保纯 ESM 模式下无语法错误：
+
+```powershell
+node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js
+```
+
+### 7.3 协议与分类快速冒烟
+
+- **NDJSON 7 字节流分片重组冒烟**（模拟极端 IO 分片场景）：
+
+  ```powershell
+  node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new AntigravityStream('t');const t=[JSON.stringify({event:'init',conversation_id:'c1'}),JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta:'par'}}),JSON.stringify({event:'result',result:{status:'SUCCESS',response:'partial answer'}})].join('\n')+'\n';for(let i=0;i<t.length;i+=7)s.push(t.slice(i,i+7));s.end();console.log(s.result(),s.conversationId)})"
+  ```
+
+  *期望输出*：`{ output: [ { type: 'text', text: 'partial answer' } ], stopReason: 'completed' } c1`
+
+- **失败分类冒烟**：
+
+  ```powershell
+  node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(classifyFailure('429 too many requests',{exitCode:1}),classifyFailure('quota limit exceeded',{exitCode:1}),classifyFailure('x',{exitCode:2})))"
+  ```
+
+  *期望输出*：`{ kind: 'rate_limited' } { kind: 'quota_exhausted' } { kind: 'usage_error' }`
+
+### 7.4 本机 CLI 可用性校验
+
+验证本地 Antigravity CLI 安装与参数响应：
+
+```powershell
+& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --new-project --dangerously-skip-permissions
+```
+
+*期望结果*：末尾输出状态为 `{"status":"SUCCESS","response":"OK\n"}` 的结果帧。
+
+---
+
+## 8. 已知限制与注意事项
+
+1. **单向外部委派（No Continuation）**：
+   Antigravity CLI 在 `--print` 模式下是一次性执行，执行完毕即退出。宿主模型无法与其建立多轮交互会话，不能调用 `send_message`。
+2. **上下文不继承**：
+   子进程启动时 `inheritsParentContext = false`。传递给 `subagent_agy` 的任务 Prompt 必须完全自包含，包含所有必要的文件路径、背景事实或操作指示。
+3. **固定能力集声明**：
+   插件声明 `capabilities = NO_START_CAPABILITIES`，不支持由宿主动态传入 `agentOptions`（模型由本插件配置或 CLI 决定）、`outputSchema`、`depthLimit` 等扩展参数。因此 `cordis.patch.yml` 中必须显式配置 `maxDepth: provider-managed`。
+4. **`--print-timeout` 退出码语义（Antigravity 1.1.28+）**：
+   触发 `--print-timeout` 超时截断时，`agy` CLI 会返回当前部分生成内容、在 stderr 打 warning，并以 **exit code 0 正常退出**，不会判定为进程异常。因此 `printTimeout` 仅作耗时上限保护，不能单纯依靠进程退出码判断任务是否完整执行完毕。
+   另：本机 `agy 1.4.12 --help` 写默认 `0s`（等到本轮结束），官方 headless 网页文档写默认 `5m`，两处口径冲突，以实测为准。
+5. **本地登录状态前置要求**：
+   子进程调用依赖本机预先完成 Antigravity 认证。若未登录，CLI 可能以匿名状态运行或静默降级模型能力，插件无法代为发起登录交互。
+6. **Windows 路径默认值**：
+   当前配置项 `DEFAULT_EXECUTABLE` 使用 `agy.exe` 路径（基于 Windows 环境）。迁移至 Linux 或 macOS 时需在配置中显式指定对应系统的可执行文件路径（如 `/usr/local/bin/agy`）。

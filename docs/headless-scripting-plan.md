@@ -58,17 +58,15 @@
 ### E. stderr ANSI 清理（低价值 / 零风险 / 极小工作量）
 - `lib/index.js#startAntigravityRun` 的 `writeStderr` 回调里，先 `stripAnsi` 再 `process.stderr.write`，避免日志被转义码污染。
 
-### F. 配额/限流检测与降级重试（已评估：默认不自动重试，只做诊断识别）
+### F. 配额/限流检测与降级重试（已实现：识别 + 可选降级）
 
-**评估结论（基于联网案例）**：值得做「识别」，不建议默认「自动重试」。
+**实现**：`lib/classify.js` 纯函数 `classifyFailure()` 输出 `quota_exhausted | rate_limited | usage_error | unknown`（可解析 retry-after / `Resets in XhYmZs`）；`wire.js` 收集 result/error 错误文本；`run.js` 写入诊断标签 `[kind]`，并在显式配置时做一次可选中继。
 
-- 真实错误形态：`Model quota limit exceeded...`、`⚠ Individual quota reached. Resets in XhYmZs.`、`429` rate limit；CLI 另有 `/usage`(`/quota`) 命令可查配额。
-- print 模式**用法错误 exit 2**；且 1.1.28+ **`--print-timeout` 超时以 exit 0 返回部分输出**——退出码与 JSON 必须一起看。
-- 自动降级的风险：one-shot 语义下重试会翻倍配额；若配额是账号级耗尽，换模型（同属 Antigravity 配额池）多半仍失败。
-- 建议实现（v2，opt-in）：
-  1. 在诊断层给错误打标签：`rate_limited`（可解析 retry-after/重置时间时）vs `quota_exhausted` vs `usage_error`(exit 2)。
-  2. `Config` 增 `fallbackModel`（仅显式配置才生效）与 `retryOnRateLimit`（429 且可解析短重置时间时退避重试 1 次）。
-  3. 默认关闭；只把 `quota_exhausted` 作为明确诊断上报，交上层决策。
+- 默认**只识别**，不自动重试（一次性委派翻倍配额；账号级配额换模型多无效）。
+- `Config.fallbackModel`：`quota_exhausted`/`rate_limited` 失败时用该模型重跑一次。
+- `Config.retryOnRateLimit`：`rate_limited`(429) 时按提示退避（≤15s）用原模型重试一次。
+- `usage_error`(exit 2) 不重试。
+- 单测：`classifyFailure` 覆盖 quota/429/retry-after/reset/exit2；`wire.errorText` 覆盖 result 与 error 两种帧。
 
 ## 4. 明确不采纳（附原因）
 
@@ -98,7 +96,7 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js
 | C `--json-schema` | 中 | 低 | 小 | 次做 |
 | D `--add-dir` | 中低 | 低 | 小 | 次做 |
 | E stderr ANSI | 低 | 无 | 极小 | 顺手 |
-| F 配额降级 | 中 | 中 | 中 | v2 或只做诊断 |
+| F 配额降级 | 中 | 中 | 中 | 已实现（opt-in） |
 
 ---
 

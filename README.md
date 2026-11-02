@@ -45,6 +45,8 @@ stdout 为逐行 NDJSON，插件只消费三种 envelope：
     jsonSchema: ''                                       # 可选，--json-schema（内联 JSON 或文件路径）
     addDirs: []                                          # 可选，--add-dir 追加工作目录
     extraArgs: []                                       # 追加参数
+    fallbackModel: gemini-3.8-flash-high                # 可选，配额/限流失败时降级重试一次
+    retryOnRateLimit: false                              # 可选，429 限流退避重试一次（默认关闭）
     env: {}                                             # 追加环境变量
     disposeGraceMs: 3000
 ```
@@ -57,6 +59,14 @@ stdout 为逐行 NDJSON，插件只消费三种 envelope：
   所以这是唯一能真正干活的取值；代价是子级对本机有完全权限。
 - `auto` → `--mode auto`，保留权限边界，只适合完全不需要工具的纯问答 prompt。
 
+## 配额与限流：识别与可选降级
+
+插件把失败运行分类（`quota_exhausted` / `rate_limited` / `usage_error` / `unknown`），并在最末诊断里以 `[...]` 标签体现。
+
+- 默认**只识别不重试**：一次性委派自动重试会翻倍配额，且账号级配额耗尽换模型多半无效。
+- 显式开启降级：配置 `fallbackModel`（如 `gemini-3.8-flash-high`），本轮因 `quota_exhausted` 或 `rate_limited` 失败时用该模型重跑**一次**。
+- 显式开启限流重试：`retryOnRateLimit: true`，本轮为 `rate_limited`（429）时按提示退避（上限 15s）用**原模型**重试一次。
+- 命中 `usage_error`（CLI 退出码 2，参数/用法错误）不重试。
 ## 已知限制
 
 - **一次性执行**：Antigravity 没有后续消息通道，子级不接受 `send_message`，只能看结果。

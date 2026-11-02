@@ -37,6 +37,10 @@ export interface Config {
 	jsonSchema?: string;
 	/** Extra workspace directories passed as repeatable `--add-dir`. */
 	addDirs?: string[];
+	/** Fallback native model to retry once when the primary attempt is rate-limited or out of quota; omitted to disable fallback. */
+	fallbackModel?: string;
+	/** Retry once with a short backoff when the attempt is rate-limited (HTTP 429). */
+	retryOnRateLimit?: boolean;
 	/** Grace in milliseconds between managed-range termination tiers. */
 	disposeGraceMs?: number;
 }

@@ -8,6 +8,7 @@ disk. It never receives or stores credentials itself.
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -27,10 +28,11 @@ def is_logged_in(page):
     try:
         if "accounts.google.com" in (page.url or ""):
             return False
-        if page.locator(ACCOUNT_SELECTOR).count() == 0:
-            return False
+        if page.locator(ACCOUNT_SELECTOR).count() > 0:
+            return True
         editor = page.locator(EDITOR_SELECTOR)
-        return editor.count() > 0 and editor.first.is_visible()
+        sign_in = page.get_by_text(re.compile(r"sign in to save activity|登录以保存活动", re.I)).count()
+        return editor.count() > 0 and editor.first.is_visible() and sign_in == 0
     except Exception:
         return False
 

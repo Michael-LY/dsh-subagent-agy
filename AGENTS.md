@@ -3,7 +3,7 @@
 DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`。
 
 ## 仓库形态
-- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；已有 `node:test` 单测（`test/*.test.js`，覆盖 `wire.js` / `classify.js` / `gemini-web.js`，共 33 用例）。
+- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；已有 `node:test` 单测（`test/*.test.js`，覆盖 `wire.js` / `classify.js` / `gemini-web.js`，共 36 用例）。
 - **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-antigravity.git`；主干 `master`，开发分支 `feature/headless-scripting`。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
@@ -47,7 +47,7 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js   # 语法
 python -m py_compile scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py   # Python 语法
-node --test   # 单测（33 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
+node --test   # 单测（36 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
 
 # 协议解析冒烟（7 字节强制分片，模拟真实 chunk 边界）：期望 completed + 文本
 node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new AntigravityStream('t');const t=[JSON.stringify({event:'init',conversation_id:'c1'}),JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta:'par'}}),JSON.stringify({event:'result',result:{status:'SUCCESS',response:'partial answer'}})].join('\n')+'\n';for(let i=0;i<t.length;i+=7)s.push(t.slice(i,i+7));s.end();console.log(s.result(),s.conversationId)})"

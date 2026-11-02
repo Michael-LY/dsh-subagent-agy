@@ -45,6 +45,11 @@ EXPORT_SELECTORS = [
     "button:has-text('Copy contents')",
     "button:has-text('复制内容')",
 ]
+SEND_SELECTORS = [
+    "button[aria-label*='Send' i]",
+    "button[aria-label*='发送']",
+    "button:has-text('Send')",
+]
 
 
 def log(message):
@@ -62,11 +67,25 @@ def find_visible(page, selectors):
     return None
 
 
+def write_result(path, payload):
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 def is_logged_in(page):
     try:
         if "accounts.google.com" in (page.url or ""):
             return False
-        return page.locator(ACCOUNT_SELECTOR).count() > 0
+        if page.locator(ACCOUNT_SELECTOR).count() > 0:
+            return True
+        # Selector drift fallback: a visible editor with no sign-in prompt is
+        # treated as signed in; the account menu is only one positive signal.
+        has_editor = page.locator(EDITOR_SELECTOR).count() > 0
+        sign_in = page.get_by_text(re.compile(r"sign in to save activity|登录以保存活动", re.I)).count()
+        return has_editor and sign_in == 0
     except Exception:
         return False
 
@@ -97,8 +116,7 @@ def open_deep_research(page):
     except Exception:
         pass
 
-    log("Deep Research menu item not found; continuing with the normal prompt box")
-    return False
+    raise RuntimeError("deep_research_unavailable")
 
 
 def submit_topic(page, topic):
@@ -111,6 +129,18 @@ def submit_topic(page, topic):
     page.wait_for_timeout(500)
     page.keyboard.press("Enter")
     page.wait_for_timeout(1500)
+
+    # Enter may insert a newline in some editor versions; click Send if the
+    # editor still holds the prompt.
+    try:
+        remaining = (page.locator(EDITOR_SELECTOR).first.inner_text() or "").strip()
+        if remaining:
+            send = find_visible(page, SEND_SELECTORS)
+            if send is not None:
+                send.click()
+                page.wait_for_timeout(1000)
+    except Exception:
+        pass
 
 
 def wait_for_plan_and_start(page, timeout_sec):
@@ -129,14 +159,27 @@ def wait_for_plan_and_start(page, timeout_sec):
     return False
 
 
+def count_visible(page, selectors):
+    total = 0
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            for index in range(min(locator.count(), 3)):
+                if locator.nth(index).is_visible():
+                    total += 1
+        except Exception:
+            continue
+    return total
+
+
 def wait_for_report(page, timeout_sec):
     deadline = time.time() + max(60, timeout_sec)
     saw_stop = False
     quiet_since = None
     while time.time() < deadline:
         try:
-            stop_count = sum(1 for selector in STOP_SELECTORS if page.locator(selector).count() > 0)
-            export_count = sum(1 for selector in EXPORT_SELECTORS if page.locator(selector).count() > 0)
+            stop_count = count_visible(page, STOP_SELECTORS)
+            export_count = count_visible(page, EXPORT_SELECTORS)
             if export_count > 0:
                 return True
             if stop_count > 0:
@@ -191,6 +234,14 @@ def save_debug(page, profile):
         pass
 
 
+def fail(out, error, page=None, profile=None):
+    if page is not None and profile:
+        save_debug(page, profile)
+    write_result(out, {"ok": False, "error": error})
+    print(json.dumps({"ok": False, "error": error}, ensure_ascii=False), flush=True)
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic")
@@ -207,8 +258,7 @@ def main():
             topic = handle.read()
     topic = topic.strip()
     if not topic:
-        print(json.dumps({"ok": False, "error": "topic is empty"}), flush=True)
-        return 1
+        return fail(args.out, "topic is empty")
 
     profile = os.path.abspath(args.profile)
     os.makedirs(profile, exist_ok=True)
@@ -230,32 +280,23 @@ def main():
                     os.remove(os.path.join(profile, "login-ok.json"))
                 except Exception:
                     pass
-                save_debug(page, profile)
-                print(json.dumps({"ok": False, "error": "login_required"}, ensure_ascii=False), flush=True)
-                return 2
+                return fail(args.out, "login_required", page, profile)
 
             open_deep_research(page)
             submit_topic(page, topic)
             wait_for_plan_and_start(page, args.timeout)
             if not wait_for_report(page, args.timeout):
-                save_debug(page, profile)
-                print(json.dumps({"ok": False, "error": "timeout waiting for report"}, ensure_ascii=False), flush=True)
-                return 3
+                return fail(args.out, "timeout waiting for report", page, profile)
 
             report = extract_report(page)
             if len(report.strip()) < 40:
-                save_debug(page, profile)
-                print(json.dumps({"ok": False, "error": "empty report"}, ensure_ascii=False), flush=True)
-                return 4
+                return fail(args.out, "empty report", page, profile)
 
-            with open(args.out, "w", encoding="utf-8") as handle:
-                json.dump({"ok": True, "report": report}, handle, ensure_ascii=False)
+            write_result(args.out, {"ok": True, "report": report})
             print(json.dumps({"ok": True, "chars": len(report)}, ensure_ascii=False), flush=True)
             return 0
         except Exception as error:
-            save_debug(page, profile)
-            print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False), flush=True)
-            return 1
+            return fail(args.out, str(error), page, profile)
         finally:
             try:
                 context.close()

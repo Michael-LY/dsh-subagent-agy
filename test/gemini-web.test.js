@@ -1,8 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
 
-import { buildRunArgs, createJobQueue, summarizeJob, validateTopic } from '../lib/gemini-web.js';
+import { buildRunArgs, createJobQueue, scriptErrorMessage, setupGeminiWeb, summarizeJob, validateTopic } from '../lib/gemini-web.js';
 
 test('validateTopic: 去空白、拒绝空值与非字符串', () => {
 	assert.equal(validateTopic('  hello  '), 'hello');
@@ -67,4 +69,54 @@ test('createJobQueue: 串行执行，第二个任务等第一个结束', async (
 	assert.equal(queue.get(second.id).status, 'done');
 	assert.equal(queue.get(first.id).result, 'report:a');
 	assert.equal(queue.latest().id, second.id);
+});
+
+test('createJobQueue: runner 失败进入 error 状态，后续任务继续执行', async () => {
+	const queue = createJobQueue({
+		runner: async (job) => {
+			if (job.topic === 'bad') throw new Error('boom');
+			return 'ok';
+		},
+	});
+	const bad = queue.enqueue('bad');
+	const good = queue.enqueue('good');
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	assert.equal(queue.get(bad.id).status, 'error');
+	assert.match(queue.get(bad.id).error, /boom/);
+	assert.equal(queue.get(good.id).status, 'done');
+});
+
+test('scriptErrorMessage: 登录/超时/空报告翻译', () => {
+	assert.match(scriptErrorMessage(2, 'login_required'), /登录/);
+	assert.match(scriptErrorMessage(1, 'timeout waiting for report'), /超时/);
+	assert.match(scriptErrorMessage(1, 'empty report'), /没有返回/);
+	assert.equal(scriptErrorMessage(9, 'custom'), 'custom');
+});
+
+test('setupGeminiWeb: /job 找不到任务返回 404', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'gemini-web-test-'));
+	const routes = [];
+	const sctx = {
+		effect(fn) { fn(); },
+		webServer: { register(entry) { routes.push(entry); return () => {}; } },
+		on() { return () => {}; },
+	};
+	const ctx = { inject(_services, callback) { callback(sctx); } };
+	setupGeminiWeb(ctx, {
+		profileDir: join(dir, 'profile'),
+		python: 'python',
+		headless: true,
+		timeoutMs: 60000,
+		scriptDir: join(dir, 'scripts'),
+	});
+	const route = routes.find((entry) => entry.path.endsWith('/job'));
+	const res = {
+		statusCode: 0,
+		headers: {},
+		setHeader(key, value) { this.headers[key] = value; },
+		end() {},
+	};
+	await route.handler({ method: 'GET', url: '/api/dsh-gemini-research/job?id=missing' }, res);
+	assert.equal(res.statusCode, 404);
+	rmSync(dir, { recursive: true, force: true });
 });

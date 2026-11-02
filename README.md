@@ -265,10 +265,10 @@ dsh-subagent-antigravity/
 
 ### 7.1 单元测试套件
 
-项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 33 个用例：
+项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 36 个用例：
 
 ```powershell
-# 运行全部单元测试（覆盖 classify 与 wire 解析）
+# 运行全部单元测试（覆盖 classify / wire / gemini-web 桥接）
 npm test
 # 或直接执行：
 node --test

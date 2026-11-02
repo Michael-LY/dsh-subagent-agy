@@ -5,13 +5,19 @@ DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部�
 ## 仓库形态
 - 纯 ESM JavaScript：无构建、无 lint、无测试、无本地 `node_modules`、**不是 git 仓库**（改坏没有 diff 可回滚）。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
-- `package.json` 的 `files` 只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
-- 版本号与 `peerDependencies` 跟随 DSH `0.2.1-rc.3` / cordis `~4.0.5`，升级时一起动。
+- `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
+- 版本号与 `peerDependencies` 跟随 DSH `0.2.1-rc.5` / cordis `~4.0.5`，升级时一起动。
+
+## 模块分工
+- `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）、把终态 status 映射成 `completed` / `aborted` / `error`。不碰进程。
+- `lib/run.js`：单次子进程生命周期。`antigravityArgv` 拼 argv、`textTask` 校验只收 text 块、`startAntigravityRun` 负责 spawn / 收流 / 终止清理 / 组装共享 run handle。
+- `lib/index.js`：cordis 插件入口。定义 `Config`（schemastery，字段：providerName / executable / model / effort / env / permissionMode / extraArgs / disposeGraceMs）、实现 `AntigravityProvider`（`NO_START_CAPABILITIES`、`inheritsParentContext = false`）、`apply()` 注册到 `ctx.subagents`。
+- 数据流：`apply` → `provider.start` → `startAntigravityRun` → spawn `agy` → `wire.js` 解析 stdout → `settleRunResult` 产出 `{ output, stopReason }`。
 
 ## 本地跑不起来的部分
 - `lib/wire.js` 零依赖，可直接用 node 跑（唯一能独立验证的模块）。
 - `lib/index.js` / `lib/run.js` 依赖 `@deepseek-ai/*`，仓库内解析不到；只能借 profile 的 hoisted `node_modules`（该 profile 是 `nodeLinker: hoisted` + `autoInstallPeers: false`）。
-- `lib/run.js` import 了 `@deepseek-ai/dsh-brand`，但它既不在 `dependencies` 也不在 `peerDependencies`——现在能跑纯靠被别的包提升。动依赖时补上。
+- `lib/run.js` import 了 `@deepseek-ai/dsh-brand`，已随 rc.5 对齐补进 `dependencies`（此前靠别的包提升）。
 
 ## 有意为之，别"顺手改回"
 - 默认 `permissionMode` 是 `dangerously-skip-permissions`（`lib/run.js`），别按直觉改成「更安全」的 `auto`：print 模式下工具确认被软拒，`auto` 的子级读不了工作区，只适合不需要工具的 prompt。

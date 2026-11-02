@@ -7,3 +7,9 @@
         provider: antigravity
         toolName: subagent_agy
         maxDepth: provider-managed
+    - id: tool-subagent-antigravity-team
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: antigravity-team
+        toolName: subagent_agy_team
+        maxDepth: provider-managed

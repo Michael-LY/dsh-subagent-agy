@@ -51,6 +51,14 @@ export interface Config {
 	geminiHeadless?: boolean;
 	/** Hard timeout in milliseconds for one research job (default 900000). */
 	geminiTimeoutMs?: number;
+	/** Provider name for the native Antigravity parallel-team variant (default `antigravity-team`). */
+	teamProviderName?: string;
+	/** Register the `antigravity-team` provider in addition to the default provider (default true). */
+	teamEnabled?: boolean;
+	/** Model-facing tool name for the DSH-side batch delegation tool (default `subagent_agy_parallel`). */
+	parallelToolName?: string;
+	/** Maximum tasks accepted by the batch delegation tool (default 8). */
+	parallelMaxTasks?: number;
 }
 
 export declare const Config: z<Config>;

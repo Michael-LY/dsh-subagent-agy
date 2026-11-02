@@ -2,7 +2,7 @@
 
 将一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在 DSH 侧边栏提供 **Gemini 网页 Deep Research** 调研面板的 DSH（DeepSeek Harness）插件。
 
-与 DSH 官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：通过注册外部单次执行（one-shot）subagent provider，配合 `@deepseek-ai/dsh-tool-subagent` 向模型暴露工具 `subagent_agy`（触发关键词：`agy`、`antigravity`，不区分大小写）。
+与 DSH 官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：通过注册外部单次执行（one-shot）subagent provider，配合 `@deepseek-ai/dsh-tool-subagent` 向模型暴露工具 `subagent_agy`（触发关键词：`agy`、`antigravity`，不区分大小写）。另提供 `subagent_agy_team`（agy 原生 `invoke_subagent` 并发）和 `subagent_agy_parallel`（DSH 侧批量异步并发）两个可选入口。
 
 ---
 
@@ -32,6 +32,7 @@ Antigravity（`agy`）是 Google 提供的 Agent CLI 工具，没有对外开放
 - **上下文完全隔离**：每次任务强制附加 `--new-project`，不复用已有项目，不污染用户本地会话。
 - **环境清理与解耦**：清理父级 CLI 注入的环境变量，阻断会话劫持。
 - **多模型与推理档位透传**：支持通过 Antigravity 调度 Gemini 4 Argon、Gemini 3.8 Flash、Claude 5.5 系列及开源大模型。
+- **异步并发子智能体**：`subagent_agy_team` 让 agy 主模型用原生 `invoke_subagent` 拆分并发；`subagent_agy_parallel` 在 DSH 侧一次启动多个独立 agy 子进程，立即返回 id，结果异步回传。
 
 ### 1.2 触发词联动机制
 
@@ -111,6 +112,25 @@ agy --print <prompt> --output-format stream-json --new-project `
   - `result.status` 为 `CANCELED` / `CANCELLED` / `INTERRUPTED` → `'aborted'`
   - 出现未知状态、未观测到终态帧，或状态为 `ERROR` / `FAILURE` → `'error'`
 
+### 3.4 agy 原生多智能体机制与本插件接入
+
+先把原生能力分清（以 `agy 1.4.12` 和官方文档为准）：
+
+| 原生能力 | 实际形态 | 能否在 `--print` 使用 |
+|---|---|---|
+| `/agents` | TUI 里的 Agent Manager 面板，用 `↑/↓`、`Enter` 查看/切换活跃子智能体和自定义 agent | ❌ 纯交互面板，headless 无意义 |
+| `/teamwork`（`/teamwork-preview`） | 付费计划的交互式两阶段团队：Phase 1 先做范围访谈、生成 prompt artifact，人工确认后才进入 Phase 2 自主执行 | ❌ 需要人工访谈/审批，不能直接塞进 `--print` |
+| `invoke_subagent` | 模型可见工具，一次调用启动一个子智能体；同一轮多次调用会并发执行；内置 `self`、`research`、`browser` 等类型 | ✅ 在 `--print` 的 `init.tools` 中存在，实测可用 |
+| `run_workflow` | 用 Python 脚本编排大量 agent 的 `parallel` / `pipeline` 工作流 | ✅ 模型可见，适合更重的批量编排 |
+
+因此插件不包装 `/teamwork` 的交互流程，而是用底层 `invoke_subagent` 做 headless 并发。提供三种入口：
+
+1. **`subagent_agy`（原有）**：一次任务一个 agy 进程。DSH 工具本身会立即返回 activation id，多个 `subagent_agy` 在同一 assistant 消息里调用即并发。
+2. **`subagent_agy_team`（新增）**：绑定 `antigravity-team` provider，在任务 prompt 前注入团队指令，让 agy 主模型用原生 `invoke_subagent` 并发拆分并汇总结果。适合“一个大任务，让 agy 自己拆”。
+3. **`subagent_agy_parallel`（新增）**：DSH 侧批量工具，参数 `tasks: [{description, prompt, cwd?}]`；一次调用并发启动多个独立 agy 子智能体，立即返回每个任务的 `subagentId`，结果由 DSH 异步回传。适合“已经知道要拆成哪几个独立任务”。
+
+> 实测记录：`agy --print "/teamwork"` 不会进入团队流程，只会把 `/teamwork` 当普通文本处理并以 `print_timeout` 结束；按 `invoke_subagent` 的正确参数（`TypeName` / `Role` / `Prompt`）在同一轮发两次 `self` 子任务，能拿到两个不同的 subagent conversation id 和各自 `ALPHA` / `BETA` 输出。
+
 ---
 
 ## 4. 配置全字段说明
@@ -133,6 +153,10 @@ agy --print <prompt> --output-format stream-json --new-project `
         fallbackModel: gemini-3.8-flash-high
         retryOnRateLimit: false
         disposeGraceMs: 3000
+        teamProviderName: antigravity-team
+        teamEnabled: true
+        parallelToolName: subagent_agy_parallel
+        parallelMaxTasks: 8
         extraArgs: []
         env: {}
 ```
@@ -156,6 +180,10 @@ agy --print <prompt> --output-format stream-json --new-project `
 | `geminiPython` | `string` (`min(1)`) | `python` | 运行 Playwright 脚本的 Python 可执行文件。 |
 | `geminiHeadless` | `boolean` | `true` | 调研时是否无头运行；初始化登录始终有头（可见窗口）。 |
 | `geminiTimeoutMs` | `number` | `900000` | 单次调研任务的硬超时（毫秒），默认 15 分钟。 |
+| `teamProviderName` | `string` (`min(1)`) | `'antigravity-team'` | 原生 `invoke_subagent` 并发模式的第二个 provider 名称；必须与 `providerName` 不同。 |
+| `teamEnabled` | `boolean` | `true` | 是否注册 `antigravity-team` provider；关闭后 `subagent_agy_team` 工具不会挂载。 |
+| `parallelToolName` | `string` (`min(1)`) | `'subagent_agy_parallel'` | DSH 侧批量并发工具的名字。 |
+| `parallelMaxTasks` | `number` (1–8) | `8` | `subagent_agy_parallel` 一次最多启动的任务数，对齐 DSH 默认 `maxActiveSubagents`。 |
 | `extraArgs` | `string[]` | `[]` | 直接透传给 `agy` 进程的追加命令行参数数组。 |
 | `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理过的环境变量字典之上。 |
 
@@ -245,6 +273,7 @@ dsh-subagent-antigravity/
 │   ├── classify.js            # 纯函数错误分类：退出码判定、429/配额正则匹配、重试时间解析
 │   ├── client.js              # DSH 客户端面板：sidebar.panellist 入口 + main 面板
 │   ├── gemini-web.js          # 主机侧 /api/dsh-gemini-research/* 桥接与串行任务队列
+│   ├── parallel.js            # DSH 侧批量并发工具 subagent_agy_parallel
 │   └── types/
 │       └── index.d.ts         # 手写 TypeScript 类型定义（Config / Export 声明）
 ├── locale/
@@ -256,6 +285,8 @@ dsh-subagent-antigravity/
 │       └── run_research.py    # Playwright 触发 Gemini 网页 Deep Research 并提取报告
 └── test/
     ├── classify.test.js       # 错误分类与延时解析单元测试（覆盖配额、429、exit 2 等）
+    ├── gemini-web.test.js     # Gemini 调研桥接、队列与失败路径测试
+    ├── parallel.test.js       # 批量并发任务规范化与结果渲染测试
     └── wire.test.js           # 协议解析测试（7 字节分片重组、兜底答案、Envelope 校验等）
 ```
 
@@ -265,7 +296,7 @@ dsh-subagent-antigravity/
 
 ### 7.1 单元测试套件
 
-项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 36 个用例：
+项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 43 个用例（新增 `parallel.test.js` 覆盖批量并发任务规范化、结果渲染与部分失败）：
 
 ```powershell
 # 运行全部单元测试（覆盖 classify / wire / gemini-web 桥接）

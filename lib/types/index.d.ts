@@ -43,6 +43,14 @@ export interface Config {
 	retryOnRateLimit?: boolean;
 	/** Grace in milliseconds between managed-range termination tiers. */
 	disposeGraceMs?: number;
+	/** Directory of the persistent Chrome profile used by the Gemini web Deep Research panel (default `~/.dsh/gemini-web-research/chrome-profile`). */
+	geminiProfileDir?: string;
+	/** Python executable used to launch the Playwright scripts (default `python`). */
+	geminiPython?: string;
+	/** Run the research browser headless; login initialization is always headed (default true). */
+	geminiHeadless?: boolean;
+	/** Hard timeout in milliseconds for one research job (default 900000). */
+	geminiTimeoutMs?: number;
 }
 
 export declare const Config: z<Config>;

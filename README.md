@@ -1,6 +1,6 @@
 # dsh-subagent-antigravity
 
-将一次性任务委派给本机 **Antigravity CLI（`agy`）** 的 DSH（DeepSeek Harness）子智能体插件。
+将一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在 DSH 侧边栏提供 **Gemini 网页 Deep Research** 调研面板的 DSH（DeepSeek Harness）插件。
 
 与 DSH 官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：通过注册外部单次执行（one-shot）subagent provider，配合 `@deepseek-ai/dsh-tool-subagent` 向模型暴露工具 `subagent_agy`（触发关键词：`agy`、`antigravity`，不区分大小写）。
 
@@ -15,7 +15,8 @@
 - [5. 失败分类与重试机制](#5-失败分类与重试机制)
 - [6. 目录结构与模块分工](#6-目录结构与模块分工)
 - [7. 验证与测试方法](#7-验证与测试方法)
-- [8. 已知限制与注意事项](#8-已知限制与注意事项)
+- [8. Gemini 网页调研（侧边栏面板）](#8-gemini-网页调研侧边栏面板)
+- [9. 已知限制与注意事项](#9-已知限制与注意事项)
 
 ---
 
@@ -151,6 +152,10 @@ agy --print <prompt> --output-format stream-json --new-project `
 | `fallbackModel` | `string` (`min(1)`) | *无（不重试）* | 降级重试备用模型。首轮出现配额耗尽（`quota_exhausted`）或限流（`rate_limited`）时，用该模型重试一次。 |
 | `retryOnRateLimit` | `boolean` | `false` | 429 限流重试开关。首轮限流且未触发降级模型时，按提示时长退避（上限 15s）并用原模型重试一次。 |
 | `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。必须为正有限数且 ≤ `MAX_TIMER_DELAY_MS`。 |
+| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/chrome-profile` | Gemini 网页调研的持久化 Chrome profile 目录；登录态保存在这里。 |
+| `geminiPython` | `string` (`min(1)`) | `python` | 运行 Playwright 脚本的 Python 可执行文件。 |
+| `geminiHeadless` | `boolean` | `true` | 调研时是否无头运行；初始化登录始终有头（可见窗口）。 |
+| `geminiTimeoutMs` | `number` | `900000` | 单次调研任务的硬超时（毫秒），默认 15 分钟。 |
 | `extraArgs` | `string[]` | `[]` | 直接透传给 `agy` 进程的追加命令行参数数组。 |
 | `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理过的环境变量字典之上。 |
 
@@ -238,11 +243,17 @@ dsh-subagent-antigravity/
 │   ├── run.js                 # 进程生命周期：argv 组装、spawn、流驱动、可选重试与退出结算
 │   ├── wire.js                # 纯 NDJSON 流解析器：行缓冲、Envelope 状态提取、权威答案决策
 │   ├── classify.js            # 纯函数错误分类：退出码判定、429/配额正则匹配、重试时间解析
+│   ├── client.js              # DSH 客户端面板：sidebar.panellist 入口 + main 面板
+│   ├── gemini-web.js          # 主机侧 /api/dsh-gemini-research/* 桥接与串行任务队列
 │   └── types/
 │       └── index.d.ts         # 手写 TypeScript 类型定义（Config / Export 声明）
 ├── locale/
 │   ├── zh.json                # 中文描述与触发词声明（agy、antigravity）
 │   └── en.json                # 英文描述与触发词声明（agy、antigravity）
+├── scripts/
+│   └── gemini_research/
+│       ├── init_login.py      # 可见 Chrome 手动登录并保存持久化 profile
+│       └── run_research.py    # Playwright 触发 Gemini 网页 Deep Research 并提取报告
 └── test/
     ├── classify.test.js       # 错误分类与延时解析单元测试（覆盖配额、429、exit 2 等）
     └── wire.test.js           # 协议解析测试（7 字节分片重组、兜底答案、Envelope 校验等）
@@ -254,7 +265,7 @@ dsh-subagent-antigravity/
 
 ### 7.1 单元测试套件
 
-项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 28 个用例：
+项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 33 个用例：
 
 ```powershell
 # 运行全部单元测试（覆盖 classify 与 wire 解析）
@@ -270,7 +281,7 @@ node --test
 确保纯 ESM 模式下无语法错误：
 
 ```powershell
-node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js
+node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js
 ```
 
 ### 7.3 协议与分类快速冒烟
@@ -303,7 +314,33 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 
 ---
 
-## 8. 已知限制与注意事项
+## 8. Gemini 网页调研（侧边栏面板）
+
+插件在 DSH 左侧边栏注册「Gemini 调研」面板（`sidebar.panellist` + `main` keyed slot），用 Google AI Pro 网页端的 Deep Research 做调研。
+
+### 8.1 组成
+
+- `lib/client.js`：侧边栏入口与面板 UI（主题输入、任务状态、报告展示与复制）。
+- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；单任务串行队列（同一 Chrome profile 只能一个实例），超时终止。
+- `scripts/gemini_research/init_login.py`：打开可见 Chrome，人工登录一次，保存持久化 profile。
+- `scripts/gemini_research/run_research.py`：Playwright 打开 Gemini → Tools → Deep Research → 提交主题 → 等研究计划 → 点 Start research → 轮询报告 → 提取正文。
+
+### 8.2 首次使用
+
+1. 确认本机 `python` 与 `playwright` 可用：`pip install playwright`（使用系统 Chrome，不需要 `playwright install`）。
+2. 侧边栏打开「Gemini 调研」→ 点「初始化登录」→ 在弹出的 Chrome 里登录 Google AI Pro 账号。
+3. 回到面板填主题 →「开始 Deep Research」。
+
+### 8.3 风险与边界
+
+- Google 服务条款禁止自动化访问；网页端自动化可能触发风控甚至封号，建议使用专用账号并控制频率，不要拿主账号批量跑。
+- AI Pro 的 Deep Research 约为每天 20 次；单次通常 5–10 分钟。
+- 网页 UI 改版会导致选择器失效，脚本会保存调试截图（profile 目录 `debug-*.png`），整体属于 best-effort。
+- 面板只展示本机生成的报告；不上传内容，也不替代 Google 官方界面。
+
+---
+
+## 9. 已知限制与注意事项
 
 1. **单向外部委派（No Continuation）**：
    Antigravity CLI 在 `--print` 模式下是一次性执行，执行完毕即退出。宿主模型无法与其建立多轮交互会话，不能调用 `send_message`。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-subagent-antigravity",
-  "description": "One-shot Antigravity (agy CLI) subagent provider over print/stream-json",
+  "description": "One-shot Antigravity (agy CLI) subagent provider over print/stream-json, plus a Gemini web Deep Research sidebar panel",
   "version": "0.2.1-rc.5",
   "private": true,
   "type": "module",
@@ -13,6 +13,8 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": "./lib/client.js",
+    "./gemini-web": "./lib/gemini-web.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
@@ -22,6 +24,7 @@
     "README.md",
     "locale/*.json",
     "lib/*.js",
+    "scripts/gemini_research/*.py",
     "cordis.patch.yml",
     "lib/types/**/*.d.ts"
   ],
@@ -29,6 +32,12 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
     }
   },
   "peerDependencies": {

@@ -47,7 +47,7 @@ Antigravity（`agy`）是 Google 提供的 Agent CLI 工具，没有对外开放
 
 ## 2. 安装与部署
 
-npm 包名：`dsh-subagent-agy`，当前版本：`0.2.1`。
+npm 包名：`dsh-subagent-agy`，当前版本：`0.3.0`。
 
 ### 2.1 从 npm 安装
 

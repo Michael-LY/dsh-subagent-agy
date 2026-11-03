@@ -1,4 +1,4 @@
-# Headless 脚本化结合方案（dsh-subagent-antigravity）
+# Headless 脚本化结合方案（dsh-subagent-agy）
 
 > 基于对本地 `agy --help` / `agy models` 的实测，以及 `lib/*.js` 真实源码。
 > 结论：调研里约一半内容基于「另一个 CLI / 旧版 Gemini CLI」的假设，不能照搬。

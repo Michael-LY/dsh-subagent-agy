@@ -1,7 +1,7 @@
 /**
  * Profile-named Antigravity one-shot subagent provider.
  *
- * @module dsh-subagent-antigravity
+ * @module dsh-subagent-agy
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';

@@ -1,4 +1,4 @@
-# dsh-subagent-antigravity
+# dsh-subagent-agy
 
 将一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在 DSH 侧边栏提供 **Gemini 网页 Deep Research** 调研面板的 DSH（DeepSeek Harness）插件。
 
@@ -46,25 +46,35 @@ Antigravity（`agy`）是 Google 提供的 Agent CLI 工具，没有对外开放
 
 ## 2. 安装与部署
 
-本插件已作为本地依赖接入本机的 DSH 桌面端 Profile（`%USERPROFILE%\.dsh\profiles\desktop`）。
+npm 包名：`dsh-subagent-agy`，当前版本：`0.2.1`。
 
-### 2.1 依赖关系与 Profile 配置
+### 2.1 从 npm 安装
 
-在 `%USERPROFILE%\.dsh\profiles\desktop\package.json` 中：
+```powershell
+npm install dsh-subagent-agy
+# 或交给 DSH 装进指定 profile：
+dsh plugin --profile desktop add dsh-subagent-agy
+```
+
+安装后重启 DSH GUI，模型可见工具 `subagent_agy`、`subagent_agy_team`、`subagent_agy_parallel`。
+
+### 2.2 本地开发依赖与 Profile 配置
+
+本插件也作为本地依赖接入本机的 DSH 桌面端 Profile（`%USERPROFILE%\.dsh\profiles\desktop`）。在 Profile 的 `package.json` 中：
 
 ```json
 {
   "dependencies": {
-    "dsh-subagent-antigravity": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-antigravity"
+    "dsh-subagent-agy": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-antigravity"
   }
 }
 ```
 
-在 Profile 的配置清单中，已将 `"dsh-subagent-antigravity"` 加入 `dsh.profile.bundles`。
+在 Profile 的配置清单中，已将 `"dsh-subagent-agy"` 加入 `dsh.profile.bundles`。
 
-### 2.2 硬链接机制与同步注意
+### 2.3 硬链接机制与同步注意
 
-- 在 Profile 安装后，`node_modules/dsh-subagent-antigravity/*` 文件以**硬链接（Hardlink）**方式映射到本代码仓库对应文件。
+- 在 Profile 安装后，`node_modules/dsh-subagent-agy/*` 文件以**硬链接（Hardlink）**方式映射到本代码仓库对应文件。
 - **同步规则**：
   - 原地修改现有文件（如修改 `lib/run.js`、`lib/wire.js` 的内容）会通过硬链接实时生效。
   - **新增文件不会自动同步**到 profile 的 `node_modules`。
@@ -140,7 +150,7 @@ agy --print <prompt> --output-format stream-json --new-project `
 ```yaml
 - insert:
     - id: subagent-antigravity
-      name: 'dsh-subagent-antigravity'
+      name: 'dsh-subagent-agy'
       config:
         providerName: antigravity
         executable: 'C:/Users/moyi_/.gemini/bin/agy.exe'
@@ -258,7 +268,7 @@ agy --print <prompt> --output-format stream-json --new-project `
 ## 6. 目录结构与模块分工
 
 ```
-dsh-subagent-antigravity/
+dsh-subagent-agy/
 ├── AGENTS.md                  # 开发与维护核心规范（触发词、硬链接、不可触碰的设计原则）
 ├── README.md                  # 项目详细说明文档（本文件）
 ├── cordis.patch.yml           # DSH Cordis 插件插入补丁配置（声明 provider 与 tool）

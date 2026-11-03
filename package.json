@@ -1,12 +1,38 @@
 {
-  "name": "dsh-subagent-antigravity",
-  "description": "One-shot Antigravity (agy CLI) subagent provider over print/stream-json, plus a Gemini web Deep Research sidebar panel",
-  "version": "0.2.1-rc.5",
-  "private": true,
+  "name": "dsh-subagent-agy",
+  "description": "Run Google Antigravity CLI (agy) as DeepSeek Harness subagents, with Gemini web Deep Research and parallel/team modes.",
+  "version": "0.2.1",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
     "test": "node --test"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "antigravity",
+    "agy",
+    "gemini",
+    "subagent",
+    "delegation",
+    "parallel"
+  ],
+  "author": "mokngai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Michael-LY/dsh-subagent-antigravity.git"
+  },
+  "homepage": "https://github.com/Michael-LY/dsh-subagent-antigravity#readme",
+  "bugs": {
+    "url": "https://github.com/Michael-LY/dsh-subagent-antigravity/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
   },
   "exports": {
     ".": {

@@ -1,14 +1,15 @@
 # AGENTS.md
 
-DSH 插件：把一次性任务委派给本机 Antigravity CLI（`agy`）。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`。
+DSH 插件 `dsh-subagent-agy`（v0.2.1）：把一次性任务委派给本机 Antigravity CLI（`agy`），并支持 Gemini 网页 Deep Research、并发/团队子智能体。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`；npm 包名同为 `dsh-subagent-agy`。
 
 ## 仓库形态
 - 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；已有 `node:test` 单测（`test/*.test.js`，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `parallel.js`，用例数随测试更新）。
-- **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-antigravity.git`；主干 `master`，开发分支 `feature/headless-scripting`。
+- **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-antigravity.git`；主干 `master`，历史功能分支 `feature/gemini-web-research` / `feature/agy-parallel-subagents` 已合并。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `scripts/gemini_research/*.py` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
 - `docs/headless-scripting-plan.md`：headless 能力嫁接（超时/结构化输出/附加目录/配额降级）的调研与取舍记录，改相关功能前先读。
-- 版本号与 `peerDependencies` 跟随 DSH `0.2.1-rc.5` / cordis `~4.0.5`，升级时一起动。
+- 包版本 `0.2.1`；`peerDependencies` 跟随 DSH `0.2.1-rc.5` / cordis `~4.0.5`，升级时一起动。
+- npm 发布：`package.json` 已去掉 `private`，`publishConfig.access=public`；当前账号 `mokngai`，发布前先 `npm pack --dry-run`，发布命令 `npm publish --access public`。不要把 `.tgz` 提交进仓库。
 
 ## 模块分工
 - `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）、把终态 status 映射成 `completed` / `aborted` / `error`，并收集 result/error 帧的错误文本供分类。不碰进程。
@@ -62,5 +63,5 @@ node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(class
 ```
 
 ## 让改动真的生效
-- profile 里的 `node_modules/dsh-subagent-antigravity/*` 是**硬链接**到本仓库（`fsutil hardlink list <file>` 可验证）：原地改内容会同步过去，但**新增文件不会**；而整体替换文件的保存方式（原子写）会断开硬链接，profile 继续用旧副本。
+- profile 里的 `node_modules/dsh-subagent-agy/*` 是**硬链接**到本仓库（`fsutil hardlink list <file>` 可验证）：原地改内容会同步过去，但**新增文件不会**；而整体替换文件的保存方式（原子写）会断开硬链接，profile 继续用旧副本。
 - 因此改完执行：`cd $env:USERPROFILE\.dsh\profiles\desktop; pnpm install`。pnpm 要写全局 store，在 DSH 沙箱里可能被拦——那就换真实终端跑；装完重启 GUI，`subagent_agy` / `subagent_agy_team` / `subagent_agy_parallel` 才会带新代码。

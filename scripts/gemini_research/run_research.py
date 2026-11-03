@@ -3,7 +3,7 @@
 The panel passes the research topic through --topic (or --topic-file) and reads
 a small JSON file written by --out. The flow is deliberately tolerant of UI
 changes: every interaction tries several selectors, and failures save a
-screenshot next to the Chrome profile for debugging.
+screenshot next to the browser profile for debugging.
 """
 
 import argparse

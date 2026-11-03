@@ -41,7 +41,7 @@ def is_logged_in(page):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", required=True, help="persistent Chrome user_data_dir")
+    parser.add_argument("--profile", required=True, help="persistent browser user_data_dir (system default browser)")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
 

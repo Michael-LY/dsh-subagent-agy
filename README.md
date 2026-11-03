@@ -191,7 +191,7 @@ agy --print <prompt> --output-format stream-json [--new-project | --project <nam
 | `fallbackModel` | `string` (`min(1)`) | *无（不重试）* | 降级重试备用模型。首轮出现配额耗尽（`quota_exhausted`）或限流（`rate_limited`）时，用该模型重试一次。 |
 | `retryOnRateLimit` | `boolean` | `false` | 429 限流重试开关。首轮限流且未触发降级模型时，按提示时长退避（上限 15s）并用原模型重试一次。 |
 | `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。必须为正有限数且 ≤ `MAX_TIMER_DELAY_MS`。 |
-| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/chrome-profile` | Gemini 网页调研的持久化浏览器 profile 目录（目录名沿用 `chrome-profile`）；登录态保存在这里。 |
+| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/browser-profile` | Gemini 网页调研与对话的持久化浏览器 profile 目录（使用系统默认浏览器，当前为 Edge）；登录态保存在这里。 |
 | `geminiPython` | `string` (`min(1)`) | `python` | 运行 Playwright 脚本的 Python 可执行文件。 |
 | `geminiHeadless` | `boolean` | `true` | 调研时是否无头运行；初始化登录始终有头（可见窗口）。 |
 | `geminiTimeoutMs` | `number` | `900000` | 单次 Deep Research 任务的硬超时（毫秒），默认 15 分钟。 |

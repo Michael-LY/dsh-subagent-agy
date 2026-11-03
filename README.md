@@ -65,7 +65,7 @@ dsh plugin --profile desktop add dsh-subagent-agy
 ```json
 {
   "dependencies": {
-    "dsh-subagent-agy": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-antigravity"
+    "dsh-subagent-agy": "file:C:/Users/moyi_/Documents/Claude-Mok/dsh-subagent-agy"
   }
 }
 ```

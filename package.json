@@ -21,11 +21,11 @@
   "author": "mokngai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Michael-LY/dsh-subagent-antigravity.git"
+    "url": "git+https://github.com/Michael-LY/dsh-subagent-agy.git"
   },
-  "homepage": "https://github.com/Michael-LY/dsh-subagent-antigravity#readme",
+  "homepage": "https://github.com/Michael-LY/dsh-subagent-agy#readme",
   "bugs": {
-    "url": "https://github.com/Michael-LY/dsh-subagent-antigravity/issues"
+    "url": "https://github.com/Michael-LY/dsh-subagent-agy/issues"
   },
   "publishConfig": {
     "access": "public"

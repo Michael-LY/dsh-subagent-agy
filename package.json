@@ -1,7 +1,7 @@
 {
   "name": "dsh-subagent-agy",
   "description": "Run Google Antigravity CLI (agy) as DeepSeek Harness subagents, with Gemini web Deep Research and parallel/team modes.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {

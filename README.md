@@ -153,6 +153,8 @@ pnpm install
         geminiChatTimeoutMs: 180000
         geminiWorkerIdleMs: 600000
         geminiWorkerMode: persistent
+        geminiDefaultModel: ''
+        geminiDefaultThinking: ''
         teamProviderName: antigravity-team
         teamEnabled: true
         parallelToolName: subagent_agy_parallel
@@ -186,7 +188,9 @@ pnpm install
 | `geminiTimeoutMs` | `number` | `900000` | 单次 Deep Research 硬超时（毫秒）。 |
 | `geminiChatTimeoutMs` | `number` (`min(1000)`) | `180000` | 单条普通对话消息硬超时（毫秒）。 |
 | `geminiWorkerIdleMs` | `number` (`min(0)`) | `600000` | 常驻 worker 空闲回收时长（毫秒）；`0` 表示不自动回收。 |
-| `geminiWorkerMode` | `persistent \| oneshot` | `persistent` | `persistent` 走常驻 worker；`oneshot` 时 Deep Research 回退旧 `run_research.py` 单次脚本（普通对话仍走 worker）。 |
+| `geminiWorkerMode` | `persistent \| oneshot` | `persistent` | `persistent` 走常驻 worker；`oneshot` 时 Deep Research 回退旧 `run_research.py` 单次脚本（普通对话仍走 worker，且不支持模型/思考档选择）。 |
+| `geminiDefaultModel` | `string` | `''` | 面板未保存本地选择时使用的默认模型 id（`flash-lite` / `flash` / `pro` / `argon`）；空值跟随网页默认。 |
+| `geminiDefaultThinking` | `string` | `''` | 面板未保存本地选择时使用的默认思考档（`low` / `medium` / `high`）；空值跟随网页默认。 |
 | `teamProviderName` | `string` (`min(1)`) | `antigravity-team` | 团队 provider 名，必须与 `providerName` 不同。 |
 | `teamEnabled` | `boolean` | `true` | 是否注册 `antigravity-team` provider。 |
 | `parallelToolName` | `string` (`min(1)`) | `subagent_agy_parallel` | 批量并发工具名。 |
@@ -218,8 +222,8 @@ apply()
 
 ```
 lib/client.js（两个侧边栏面板）
-  ├── 「Gemini 调研」→ /run、/job、/status
-  └── 「Gemini 对话」→ /chat/send、/chat/job、/chat/status、/chat/new
+  ├── 「Gemini 调研」→ /models、/run、/job、/status
+  └── 「Gemini 对话」→ /models、/chat/send、/chat/job、/chat/status、/chat/new
                 │
 lib/gemini-web.js（HTTP 桥接）
   ├── researchQueue（串行）──┐
@@ -234,13 +238,14 @@ lib/gemini-web.js（HTTP 桥接）
                              │
                 worker.py（常驻 Python）
                   ├── 一个 Chromium persistent context（persistent 模式）
-                  ├── ChatPage（chat.send / chat.new / status）
-                  └── ResearchPage（research.run / status）
+                  ├── ChatPage（chat.send / chat.new / models.list / status）
+                  └── ResearchPage（research.run / models.list / status）
 ```
 
 - 两条队列各自串行，但共享同一个 worker，所以 chat 与 research 使用两个独立 page 并行工作。
-- `geminiWorkerMode: oneshot` 时，research 队列回退到旧 `run_research.py`（每次启动一个 Python 进程），chat 仍走 worker。
-- 协议：stdin/stdout JSONL；命令 `chat.send`、`chat.new`、`research.run`、`status`、`shutdown`、`cancel`；响应 `ready`、`heartbeat`、`progress`、`result`（`ok/error/data`）。日志只写 stderr。
+- `geminiWorkerMode: oneshot` 时，research 队列回退到旧 `run_research.py`（每次启动一个 Python 进程），chat 仍走 worker；该模式下 research 不接受模型/思考参数。
+- 协议：stdin/stdout JSONL；命令 `chat.send`、`chat.new`、`research.run`、`models.list`、`status`、`shutdown`、`cancel`；响应 `ready`、`heartbeat`、`progress`、`result`（`ok/error/data`）。日志只写 stderr。
+- `chat.send` / `research.run` 可选 payload：`model`（id）、`modelLabel`（UI 文本，辅助匹配）、`thinking`（`low` / `medium` / `high`）；结果返回 `modelApplied` / `thinkingApplied` / `currentModel`。
 
 ### 5.3 浏览器 profile 与登录检测
 
@@ -269,6 +274,17 @@ lib/gemini-web.js（HTTP 桥接）
 - `loginReady`：`loginState.signedIn === true` 且满足以下之一：worker 在线，或 `checkedAt` 距现在不超过 5 分钟（刚完成登录的宽限期）。
 - 这样旧的 `login-ok.json` 不会单独造成「已就绪」假阳性；重启 GUI 后 5 分钟内显示「已验证」，之后显示「待验证」，发起任务会自动重新验证。
 
+### 5.4 模型与思考强度
+
+两个面板各有「模型」和「思考强度」下拉，选择随每次 `/run` / `/chat/send` 请求下发：
+
+- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `[data-test-id^='bard-mode-option-']` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。面板挂载时先取 `live=0` 的静态目录，点「刷新模型」才请求实时目录，避免打开面板就拉起 headless Edge。
+- **模型匹配**：输入先经 `_model_id_from_label()` 归一化（支持 `flash` / `Flash` / `3.8 Flash 全方位帮助` 等），菜单项按 id 精确匹配（`flash-lite` / `flash` / `pro` / `argon`），点选后回读模型 id 校验；`data-test-id` hash 只作提示。
+- **思考强度**：在模型菜单底部「思考等级」二级菜单中按结构断言必须正好 3 项，索引 0/1/2 对应 `low` / `medium` / `high`（文本为低/中/高，中英文都做 sanity 校验）。
+- **降级**：未请求模型/思考时保持网页默认；显式请求非默认但控件/选项不存在时返回 `model_unavailable` / `thinking_unavailable` 明确报错，不静默使用默认；只有 `/models` 目录读取失败才回退静态目录。
+- **Deep Research**：提交前模型按钮仍存在，面板同样提供选择；但 DR 是否真正采用所选模型尚未 E2E 验证，面板注明「可能不生效」。
+- **Deep Think**：当前页面没有独立控件，本期不做。
+
 ---
 
 ## 6. 目录结构与模块分工
@@ -289,6 +305,7 @@ dsh-subagent-agy/
 │   ├── classify.js            # 失败分类与 retry-after 解析
 │   ├── client.js              # 两个侧边栏面板（Gemini 调研 / Gemini 对话）
 │   ├── gemini-web.js          # /api/dsh-gemini-research/* 桥接、双队列、登录态
+│   ├── gemini-models.js       # 静态模型目录、目录归一化、模型/思考校验与匹配
 │   ├── worker-client.js       # 常驻 worker 客户端（懒启动/重启/空闲回收）
 │   ├── parallel.js            # subagent_agy_parallel 批量并发工具
 │   └── types/
@@ -307,8 +324,10 @@ dsh-subagent-agy/
 │       └── run_research.py    # 旧单次 Deep Research 脚本（oneshot 回退）
 └── test/
     ├── classify.test.js       # 失败分类与延时解析
+    ├── gemini-models.test.js  # 模型目录归一化、校验与 token 匹配
     ├── gemini-web.test.js     # 双队列、路由、登录态、任务摘要
     ├── parallel.test.js       # 批量并发任务规范化与渲染
+    ├── test_selectors.py      # Python 完成判定纯函数
     ├── worker-client.test.js  # worker 协议、崩溃重启、超时、空闲回收
     └── wire.test.js           # NDJSON 协议解析
 ```
@@ -318,7 +337,8 @@ dsh-subagent-agy/
 - `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案、映射终态状态、收集错误文本。
 - `lib/classify.js`：纯函数失败分类。`classifyFailure()` → `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`；`parseRetryAfterMs()` 解析 retry-after / `Resets in XhYmZs`。
 - `lib/client.js`：DSH 客户端面板。lazy-CJS（`window.__ModuleLoader__.load`），只依赖 React；注册两个 `sidebar.panellist` 入口（order 30 / 31）和两个 `main` keyed slot。
-- `lib/gemini-web.js`：主机侧 HTTP 桥接。`createJobQueue` 派生出 research / chat 两条串行队列；共享一个 `GeminiWorkerClient`；提供 `/status`、`/chat/status`、`/login/init`、`/run`、`/chat/send`、`/chat/new`、`/chat/latest`、`/chat/job`、`/job`、`/latest`；注册模型可见工具 `gemini_web_research`。
+- `lib/gemini-web.js`：主机侧 HTTP 桥接。`createJobQueue` 派生出 research / chat 两条串行队列；共享一个 `GeminiWorkerClient`；提供 `/models`、`/status`、`/chat/status`、`/login/init`、`/run`、`/chat/send`、`/chat/new`、`/chat/latest`、`/chat/job`、`/job`、`/latest`；注册模型可见工具 `gemini_web_research`。
+- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按 id 精确匹配模型菜单项。
 - `lib/worker-client.js`：常驻 worker 客户端。懒启动、`ready` 握手、请求 id 关联、progress 转发、超时 cancel、崩溃拒绝 pending、空闲 shutdown、dispose 杀进程树；`health` 暴露 `{running, ready, pid, lastHeartbeatAt, lastError, stderrTail}`。
 - `lib/parallel.js`：DSH 侧批量并发工具。
 - `scripts/gemini_research/worker.py`：常驻 Python worker，持有一个 persistent context 与 chat/research 两个 page，JSONL 协议。
@@ -335,10 +355,11 @@ dsh-subagent-agy/
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/status` | 综合状态：登录、worker、research / chat 队列与任务 |
+| GET | `/models?mode=chat\|research` | 模型/思考目录（实时读取，失败回退静态目录）与配置默认值 |
 | GET | `/chat/status` | 对话面板状态 |
 | POST | `/login/init` | 停止 worker 并启动 `init_login.py`（有任务时 409） |
-| POST | `/run` | 提交 Deep Research 任务，返回 `{jobId}` |
-| POST | `/chat/send` | 提交对话消息，返回 `{jobId}` |
+| POST | `/run` | 提交 Deep Research 任务，可选 `model` / `thinking`，返回 `{jobId}` |
+| POST | `/chat/send` | 提交对话消息，可选 `model` / `thinking`，返回 `{jobId}` |
 | POST | `/chat/new` | 清空当前对话上下文（有对话任务时 409） |
 | GET | `/chat/latest` | 最近一条对话任务与 `conversationUrl` |
 | GET | `/chat/job?id=` | 查询对话任务 |
@@ -357,7 +378,7 @@ npm test
 node --test --test-isolation=none
 ```
 
-当前共 **60 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定用例：
+当前共 **68 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定与模型匹配用例：
 
 ```powershell
 python -m unittest test/test_selectors.py
@@ -403,3 +424,4 @@ node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(class
 7. **一次性委派无法续聊**：`agy --print` 执行完即退出，不继承父会话上下文；任务 prompt 必须自包含。
 8. **`--print-timeout` 语义**：到期会返回部分输出、stderr 打 warning 并以 exit 0 退出；`printTimeout` 只是兜底截断，不能据此判断任务完整完成。
 9. **Windows 路径默认值**：默认 `executable` 是 Windows 的 `agy.exe`；迁移到 Linux/macOS 需在配置中显式指定可执行文件路径。
+10. **模型/思考选择**：菜单项随账号/版本可能变化；实时目录读取失败会回退静态目录，选择结果以 `modelApplied` / `thinkingApplied` 为准。Deep Research 内选择是否真正影响报告仍待最小 E2E 验证。

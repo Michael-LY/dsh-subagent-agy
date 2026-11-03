@@ -52,6 +52,27 @@ test('summarizeJob: 不含大字段 result', () => {
 	assert.equal(Object.hasOwn(summary, 'result'), false);
 });
 
+test('summarizeJob: 带出模型/思考档与应用结果', () => {
+	const summary = summarizeJob({
+		id: 'j2',
+		kind: 'chat',
+		status: 'done',
+		message: 'hi',
+		reply: 'long reply',
+		model: 'flash',
+		thinking: 'high',
+		modelApplied: true,
+		thinkingApplied: false,
+		currentModel: 'Flash',
+	});
+	assert.equal(summary.model, 'flash');
+	assert.equal(summary.thinking, 'high');
+	assert.equal(summary.modelApplied, true);
+	assert.equal(summary.thinkingApplied, false);
+	assert.equal(summary.currentModel, 'Flash');
+	assert.equal(Object.hasOwn(summary, 'reply'), false);
+});
+
 test('createJobQueue: 串行执行，第二个任务等第一个结束', async () => {
 	let active = 0;
 	let maxActive = 0;
@@ -131,7 +152,14 @@ test('setupGeminiWeb: chat 队列、/chat/send 与 /job 返回回复', async () 
 		async request(command, payload, options) {
 			if (command === 'chat.send') {
 				options?.onProgress?.({ phase: 'waiting' });
-				return { reply: `reply:${payload.message}`, conversationUrl: 'https://gemini.google.com/app/abc', signedIn: true };
+				return {
+					reply: `reply:${payload.message}`,
+					conversationUrl: 'https://gemini.google.com/app/abc',
+					signedIn: true,
+					modelApplied: payload.model === 'pro',
+					thinkingApplied: payload.thinking === 'high',
+					currentModel: 'Pro',
+				};
 			}
 			if (command === 'chat.new') return {};
 			return {};
@@ -171,7 +199,7 @@ test('setupGeminiWeb: chat 队列、/chat/send 与 /job 返回回复', async () 
 	try {
 		const sendRoute = routes.find((entry) => entry.path.endsWith('/chat/send'));
 		const sendRes = makeRes();
-		await sendRoute.handler(makeReq('POST', '/api/dsh-gemini-research/chat/send', { message: 'hi' }), sendRes);
+		await sendRoute.handler(makeReq('POST', '/api/dsh-gemini-research/chat/send', { message: 'hi', model: 'pro', thinking: 'high' }), sendRes);
 		const sent = JSON.parse(sendRes.body);
 		assert.equal(sent.ok, true);
 		assert.ok(sent.jobId);
@@ -184,6 +212,10 @@ test('setupGeminiWeb: chat 队列、/chat/send 与 /job 返回回复', async () 
 		assert.equal(job.kind, 'chat');
 		assert.equal(job.reply, 'reply:hi');
 		assert.equal(job.conversationUrl, 'https://gemini.google.com/app/abc');
+		assert.equal(job.model, 'pro');
+		assert.equal(job.thinking, 'high');
+		assert.equal(job.modelApplied, true);
+		assert.equal(job.thinkingApplied, true);
 
 		const statusRoute = routes.find((entry) => entry.path.endsWith('/status'));
 		const statusRes = makeRes();
@@ -192,6 +224,84 @@ test('setupGeminiWeb: chat 队列、/chat/send 与 /job 返回回复', async () 
 		assert.equal(status.loginReady, true);
 		assert.equal(status.chat.running, false);
 		assert.equal(status.chat.conversationUrl, 'https://gemini.google.com/app/abc');
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('setupGeminiWeb: /models 返回实时目录与配置默认值', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'gemini-web-models-test-'));
+	const routes = [];
+	const sctx = {
+		effect(fn) { return fn(); },
+		webServer: { register(entry) { routes.push(entry); return () => {}; } },
+		tools: { register() { return () => {}; } },
+	};
+	const ctx = { inject(_services, callback) { callback(sctx); } };
+	let modelCalls = 0;
+	const fakeWorker = {
+		health: { running: true, ready: true },
+		async request(command) {
+			if (command === 'models.list') {
+				modelCalls += 1;
+				return {
+					source: 'live',
+					models: [{ id: `call-${modelCalls}`, label: `Call ${modelCalls}`, tokens: ['call'], thinkingLevels: ['low', 'medium', 'high'] }],
+					thinking: [{ id: 'high', label: '高（超级详尽）' }],
+					deepThink: { supported: false, label: 'Deep Think' },
+				};
+			}
+			return {};
+		},
+		async shutdown() {},
+		async dispose() {},
+	};
+	setupGeminiWeb(ctx, {
+		profileDir: join(dir, 'profile'),
+		python: 'python',
+		headless: true,
+		timeoutMs: 60000,
+		scriptDir: join(dir, 'scripts'),
+		defaultModel: 'argon',
+		defaultThinking: 'high',
+		workerClient: fakeWorker,
+	});
+	const res = {
+		statusCode: 0,
+		headers: {},
+		setHeader(key, value) { this.headers[key] = value; },
+		end(value) { this.body = value; },
+	};
+	try {
+		const modelsRoute = routes.find((entry) => entry.path.endsWith('/models'));
+		const call = async (query) => {
+			const local = {
+				statusCode: 0,
+				headers: {},
+				setHeader(key, value) { this.headers[key] = value; },
+				end(value) { this.body = value; },
+			};
+			await modelsRoute.handler({ method: 'GET', url: `/api/dsh-gemini-research/models?${query}` }, local);
+			return JSON.parse(local.body);
+		};
+
+		const staticBody = await call('mode=chat&live=0');
+		assert.equal(staticBody.source, 'fallback');
+		assert.equal(modelCalls, 0);
+
+		const first = await call('mode=chat');
+		assert.equal(first.source, 'live');
+		assert.equal(first.models[0].id, 'call-1');
+		assert.deepEqual(first.defaults, { model: 'argon', thinking: 'high' });
+		assert.equal(modelCalls, 1);
+
+		const cached = await call('mode=chat');
+		assert.equal(cached.models[0].id, 'call-1');
+		assert.equal(modelCalls, 1);
+
+		const refreshed = await call('mode=chat&refresh=1');
+		assert.equal(refreshed.models[0].id, 'call-2');
+		assert.equal(modelCalls, 2);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

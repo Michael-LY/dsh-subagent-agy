@@ -31,6 +31,10 @@ export interface Config {
 	permissionMode?: AntigravityPermissionMode;
 	/** Extra CLI arguments appended verbatim. */
 	extraArgs?: string[];
+	/** Add `--new-project` so every run creates an isolated Antigravity project (default false). */
+	newProject?: boolean;
+	/** Fixed Antigravity project name or id passed as `--project <name>`; takes precedence over `newProject` (default ''). */
+	projectName?: string;
 	/** Go-style duration for `--print-timeout` (e.g. "180s", "10m"); omitted to wait until the turn completes. */
 	printTimeout?: string;
 	/** JSON schema (inline or file path) for `--json-schema`, constraining the final structured result. */

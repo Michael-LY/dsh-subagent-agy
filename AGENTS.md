@@ -59,7 +59,7 @@ node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new Antigr
 node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(classifyFailure('429 too many requests',{exitCode:1}),classifyFailure('quota limit exceeded',{exitCode:1}),classifyFailure('x',{exitCode:2})))"
 
 # CLI 本身可用（未登录时会静默降级）：末帧应为 {"status":"SUCCESS",...}
-& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --new-project
+& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --project dsh-subagent-agy
 ```
 
 ## 让改动真的生效

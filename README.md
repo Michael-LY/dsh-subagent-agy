@@ -29,7 +29,8 @@ Antigravity（`agy`）是 Google 提供的 Agent CLI 工具，没有对外开放
 本插件为 DSH 提供原生接入 Antigravity 的能力：
 
 - **单次委派（One-shot External Provider）**：在宿主会话的工作区下 spawn 独立的 `agy` 子进程，执行单个独立任务后收集结果并退出。
-- **上下文完全隔离**：每次任务强制附加 `--new-project`，不复用已有项目，不污染用户本地会话。
+- **每次调用独立会话**：每次 `--print` 本身就是一个新会话（新 `conversation_id`），不复用上一轮对话上下文；默认**不再**附加 `--new-project`，避免在 Antigravity Desktop 的 Projects 列表里堆积大量同名项目。
+- **项目归属可配**：默认沿用当前工作目录已有的项目；需要固定归属时配置 `projectName`（映射 `--project <name>`），需要恢复「每次新建项目」的旧行为时配置 `newProject: true`。
 - **环境清理与解耦**：清理父级 CLI 注入的环境变量，阻断会话劫持。
 - **多模型与推理档位透传**：支持通过 Antigravity 调度 Gemini 4 Argon、Gemini 3.8 Flash、Claude 5.5 系列及开源大模型。
 - **异步并发子智能体**：`subagent_agy_team` 让 agy 主模型用原生 `invoke_subagent` 拆分并发；`subagent_agy_parallel` 在 DSH 侧一次启动多个独立 agy 子进程，立即返回 id，结果异步回传。
@@ -96,7 +97,7 @@ dsh plugin --profile desktop add dsh-subagent-agy
 插件内部拼装并执行的核心命令行格式如下：
 
 ```powershell
-agy --print <prompt> --output-format stream-json --new-project `
+agy --print <prompt> --output-format stream-json [--new-project | --project <name>] `
     [--model <model>] [--effort <effort>] `
     (--dangerously-skip-permissions | --mode auto) `
     [--print-timeout <duration>] [--json-schema <schema>] `
@@ -157,6 +158,8 @@ agy --print <prompt> --output-format stream-json --new-project `
         model: gemini-4-argon-high
         effort: high
         permissionMode: dangerously-skip-permissions
+        newProject: false
+        projectName: ''
         printTimeout: 180s
         # jsonSchema: '{"type": "object"}'   # 可选，内联 JSON 或文件路径；不要传空字符串（min(1) 校验）
         addDirs: []
@@ -183,6 +186,8 @@ agy --print <prompt> --output-format stream-json --new-project `
 | `printTimeout` | `string` (`min(1)`) | *无（无限等待）* | 原生执行超时（Go duration 格式，如 `"180s"`、`"10m"`），映射为 `--print-timeout <val>`。**注意：CLI 到期超时后输出部分结果、在 stderr 打 warning，并以 exit 0 退出**，不是失败。 |
 | `jsonSchema` | `string` (`min(1)`) | *无* | 结构化输出约束，映射为 `--json-schema <val>`。支持内联 JSON Schema 字符串或本地 schema 文件路径。 |
 | `addDirs` | `string[]` | *无* | 附加只读工作区目录列表。每个路径映射为一个 `--add-dir <dir>` 参数。 |
+| `newProject` | `boolean` | `false` | 是否附加 `--new-project` 强制为本次任务新建 Antigravity 项目。默认关闭：`--print` 每次已是独立会话，无需再新建项目；开启后每次调用都会在 Desktop 的 Projects 列表里多出一条同名项目。 |
+| `projectName` | `string` | `''` | 固定项目归属，非空时映射为 `--project <name>`。同一工作区反复调用会复用同一个项目，Projects 列表只保留一条。与 `newProject: true` 同时配置时以本项为准（不再附加 `--new-project`）。 |
 | `fallbackModel` | `string` (`min(1)`) | *无（不重试）* | 降级重试备用模型。首轮出现配额耗尽（`quota_exhausted`）或限流（`rate_limited`）时，用该模型重试一次。 |
 | `retryOnRateLimit` | `boolean` | `false` | 429 限流重试开关。首轮限流且未触发降级模型时，按提示时长退避（上限 15s）并用原模型重试一次。 |
 | `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。必须为正有限数且 ≤ `MAX_TIMER_DELAY_MS`。 |
@@ -348,7 +353,7 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 验证本地 Antigravity CLI 安装与参数响应：
 
 ```powershell
-& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --new-project --dangerously-skip-permissions
+& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --project dsh-subagent-agy --dangerously-skip-permissions
 ```
 
 *期望结果*：末尾输出状态为 `{"status":"SUCCESS","response":"OK\n"}` 的结果帧。

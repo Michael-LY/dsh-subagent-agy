@@ -41,7 +41,7 @@ def is_logged_in(page):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", required=True, help="persistent Chrome user_data_dir")
+    parser.add_argument("--profile", required=True, help="persistent browser user_data_dir (system default browser)")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
 
@@ -67,8 +67,15 @@ def main():
                 print(json.dumps({"ok": False, "error": f"goto failed: {error}"}), flush=True)
                 return 1
 
+            def has_session_cookie():
+                try:
+                    names = {cookie.get("name") for cookie in context.cookies()}
+                    return "SID" in names or "__Secure-1PSID" in names
+                except Exception:
+                    return False
+
             while time.time() < deadline:
-                if is_logged_in(page):
+                if has_session_cookie() or is_logged_in(page):
                     try:
                         with open(os.path.join(profile, "login-ok.json"), "w", encoding="utf-8") as handle:
                             json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "url": page.url, "browser": browser_label(channel)}, handle)
@@ -76,7 +83,13 @@ def main():
                         pass
                     print(json.dumps({"ok": True, "url": page.url, "browser": browser_label(channel)}, ensure_ascii=False), flush=True)
                     return 0
-                time.sleep(2)
+                try:
+                    if page.is_closed():
+                        print(json.dumps({"ok": False, "error": "browser window closed before login was detected"}, ensure_ascii=False), flush=True)
+                        return 1
+                except Exception:
+                    pass
+                time.sleep(1)
 
             print(json.dumps({"ok": False, "error": "timeout waiting for Google login"}, ensure_ascii=False), flush=True)
             return 1

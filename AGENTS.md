@@ -4,7 +4,7 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 
 ## 仓库形态
 
-- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；使用 `node:test` 单测（`test/*.test.js`，当前 67 个用例，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`），另有 `test/test_selectors.py` 覆盖完成判定纯函数。
+- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；使用 `node:test` 单测（`test/*.test.js`，当前 68 个用例，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`），另有 `test/test_selectors.py` 覆盖完成判定与模型匹配纯函数。
 - **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-agy.git`；主干 `master`，历史功能分支 `feature/gemini-web-research` / `feature/agy-parallel-subagents` 已合并；新功能分支 `feature/gemini-web-chat` 承载 Gemini 对话面板与常驻 worker。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `scripts/gemini_research/*.py` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
@@ -59,7 +59,7 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 - **普通对话完成判定**：`wait_for_reply` 要求出现新回复气泡、文本稳定 ≥2.5 秒，且 Stop 已消失或回复动作按钮已出现；发出后 90 秒没有开始生成则报 `no_response_started`。
 - **普通对话允许未登录**：Gemini 网页支持未登录对话，但无历史；`ChatPage.ensure_page` 会记录 `signedIn: false`。Deep Research 必须登录，`ResearchPage.run` 检测不到登录直接抛 `LoginRequired`。
 - **专用浏览器 profile**：Playwright 不能复用正在运行的日常 Edge/Chrome User Data（单实例锁），必须使用独立 profile（默认 `~/.dsh/gemini-web-research/browser-profile`，目录名不再是 `chrome-profile`）。
-- **模型/思考强度选择**：面板目录由 `models.list` 实时读取，失败回退 `lib/gemini-models.js`；模型按英文 token（`flash-lite` / `3.8 flash` / `3.1 pro` / `4 argon`）匹配，`bard-mode-option-*` hash 只作提示；思考等级按「思考等级」二级菜单结构断言正好 3 项、索引 0/1/2 = low/medium/high。找不到控件保持网页默认并标 `modelApplied:false` / `thinkingApplied:false`，不阻断；oneshot 模式的 research 不接受模型/思考参数。
+- **模型/思考强度选择**：面板目录由 `models.list` 实时读取，失败回退 `lib/gemini-models.js`；模型用 `_model_id_from_label` 精确匹配（`flash-lite` / `flash` / `pro` / `argon`）并回读模型 id 校验，`bard-mode-option-*` hash 只作提示；思考等级按「思考等级」二级菜单结构断言正好 3 项、索引 0/1/2 = low/medium/high。未请求时保持网页默认；**显式请求非默认但控件/选项不存在时抛 `ModelUnavailable` / `ThinkingUnavailable` 明确报错，不静默降级**；只有目录读取失败才回退静态目录。oneshot 模式的 research 不接受模型/思考参数。
 - **Deep Research 的模型选择**：composer 阶段可设置，但 DR 是否真正采用所选模型尚未 E2E 验证，面板文案必须保留「可能不生效」。
 - **Gemini 网页自动化是 best-effort**：Google ToS 禁止自动化访问，可能触发风控/封号；选择器随网页改版会失效，脚本失败时在 profile 目录留 `debug-*.png`。不要把这条路径接进高频批量任务。
 
@@ -75,7 +75,7 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js   # 语法
 python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py scripts/gemini_research/worker.py scripts/gemini_research/chat_page.py scripts/gemini_research/research_page.py scripts/gemini_research/selectors.py   # Python 语法
-node --test   # 单测（67 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
+node --test   # 单测（68 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
 python -m unittest test/test_selectors.py   # Python 完成判定纯函数测试
 
 # 协议解析冒烟（7 字节强制分片，模拟真实 chunk 边界）：期望 completed + 文本

@@ -68,5 +68,23 @@ class ShouldFinishReplyTest(unittest.TestCase):
         )
 
 
+class ModelHelpersTest(unittest.TestCase):
+    def test_normalise_text(self):
+        self.assertEqual(selectors._normalise_text("  Flash-Lite   极速回答 "), "flash-lite 极速回答")
+
+    def test_model_id_from_label_flash_lite_vs_flash(self):
+        self.assertEqual(selectors._model_id_from_label("3.5 Flash-Lite 极速回答"), "flash-lite")
+        self.assertEqual(selectors._model_id_from_label("3.8 Flash 全方位帮助"), "flash")
+        self.assertEqual(selectors._model_id_from_label("3.1 Pro 高级推理"), "pro")
+        self.assertEqual(selectors._model_id_from_label("4 Argon 复杂任务"), "argon")
+
+    def test_model_tokens_do_not_mix_flash_and_flash_lite(self):
+        flash_tokens = selectors._model_tokens("flash", "3.8 Flash 全方位帮助")
+        lite_tokens = selectors._model_tokens("flash-lite", "3.5 Flash-Lite 极速回答")
+        self.assertIn("3.8 flash", flash_tokens)
+        self.assertIn("flash-lite", lite_tokens)
+        self.assertNotIn("flash-lite", flash_tokens)
+
+
 if __name__ == "__main__":
     unittest.main()

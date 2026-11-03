@@ -353,7 +353,8 @@ async def _visible_thinking_items(page) -> list[dict[str, Any]]:
                 continue
             if _normalise_text(text) in ("思考等级", "thinking level", "thinking"):
                 continue
-            rows.append({"index": index, "text": text, "testid": testid})
+            classes = (await item.get_attribute("class") or "").split()
+            rows.append({"index": index, "text": text, "testid": testid, "selected": "selected" in classes})
         except Exception:
             continue
     return rows
@@ -404,7 +405,7 @@ async def list_model_catalog(page) -> dict[str, Any]:
 
 
 async def select_model(page, model: str | None, label: str | None = None) -> dict[str, Any]:
-    """Select one model by English token; verify the trigger text afterwards."""
+    """Select one model by exact stable id; verify the trigger afterwards."""
     if not model:
         return {"applied": False, "reason": "default"}
     button = await _model_button(page)
@@ -416,21 +417,14 @@ async def select_model(page, model: str | None, label: str | None = None) -> dic
         options = await _visible_model_options(page)
         if not options:
             raise ModelUnavailable("模型菜单为空")
-        wanted = _model_tokens(model, label)
-        best = None
-        best_length = 0
-        for option in options:
-            haystack = _normalise_text(option["text"])
-            for token in wanted:
-                if token and token in haystack and len(token) > best_length:
-                    best = option
-                    best_length = len(token)
-        if best is None:
-            raise ModelUnavailable(f"找不到模型选项：{label or model}")
+        exact = [option for option in options if _model_id_from_label(option["text"]) == model]
+        if len(exact) != 1:
+            raise ModelUnavailable(f"找不到唯一模型选项：{label or model}")
+        best = exact[0]
         await page.locator(MODEL_OPTION_SELECTOR).nth(best["index"]).click()
         await page.wait_for_timeout(1000)
         current = await current_model_text(page)
-        if not any(token and token in _normalise_text(current) for token in wanted):
+        if _model_id_from_label(current) != model:
             raise ModelUnavailable(f"模型选择未生效：{label or model}")
         return {"applied": True, "model": model, "label": best["text"]}
     finally:
@@ -469,6 +463,26 @@ async def select_thinking(page, thinking: str | None) -> dict[str, Any]:
             raise ThinkingUnavailable(f"思考等级文本不符合预期：{items[index]['text']}")
         await page.locator(THINKING_ITEM_SELECTOR).nth(items[index]["index"]).click()
         await page.wait_for_timeout(700)
+        # Read back the selected item from the menu; button text does not always
+        # expose the current thinking level (notably low/default).
+        try:
+            await page.keyboard.press("Escape")
+            await button.click()
+            await page.wait_for_timeout(800)
+            check_entry = await _thinking_entry(page)
+            if check_entry is not None:
+                await check_entry.click()
+                await page.wait_for_timeout(700)
+                check_items = await _visible_thinking_items(page)
+                selected = [item for item in check_items if item.get("selected")]
+                if len(check_items) == 3 and selected:
+                    if _normalise_text(selected[0]["text"]) != _normalise_text(items[index]["text"]):
+                        raise ThinkingUnavailable("思考等级回读不一致")
+        except ThinkingUnavailable:
+            raise
+        except Exception:
+            # Read-back is best-effort; click itself remains the source of truth.
+            pass
         return {"applied": True, "thinking": expected["id"], "label": items[index]["text"]}
     finally:
         try:

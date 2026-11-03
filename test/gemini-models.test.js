@@ -47,6 +47,20 @@ test('gemini-models: normalizeModelCatalog 处理实时目录与空数据', () =
 	assert.equal(live.deepThink.supported, false);
 });
 
+test('gemini-models: normalizeModelCatalog 按 id 去重', () => {
+	const live = normalizeModelCatalog({
+		source: 'live',
+		models: [
+			{ id: 'flash', label: '3.8 Flash 全方位帮助' },
+			{ id: 'flash', label: '3.8 Flash 重复项' },
+			{ id: 'pro', label: '3.1 Pro 高级推理' },
+		],
+		thinking: [{ id: 'low', label: '低' }, { id: 'low', label: '低重复' }],
+	});
+	assert.deepEqual(live.models.map((item) => item.id), ['flash', 'pro']);
+	assert.deepEqual(live.thinking.map((item) => item.id), ['low']);
+});
+
 test('gemini-models: 按英文 token 匹配模型，不被 Flash-Lite 抢走 Flash', () => {
 	assert.equal(matchModelOption('3.5 Flash-Lite 极速回答', DEFAULT_MODEL_OPTIONS).id, 'flash-lite');
 	assert.equal(matchModelOption('3.8 Flash 全方位帮助', DEFAULT_MODEL_OPTIONS).id, 'flash');

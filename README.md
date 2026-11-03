@@ -278,10 +278,10 @@ lib/gemini-web.js（HTTP 桥接）
 
 两个面板各有「模型」和「思考强度」下拉，选择随每次 `/run` / `/chat/send` 请求下发：
 
-- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `gem-data-id^='bard-mode-option-'` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。
+- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `gem-data-id^='bard-mode-option-'` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。面板挂载时先取 `live=0` 的静态目录，点「刷新模型」才请求实时目录，避免打开面板就拉起 headless Edge。
 - **模型匹配**：按英文模型名 token（`flash-lite` / `3.8 flash` / `3.1 pro` / `4 argon`）匹配菜单文本，`data-test-id` hash 只作提示；点选后回读按钮 aria/text 校验。
 - **思考强度**：在模型菜单底部「思考等级」二级菜单中按结构断言必须正好 3 项，索引 0/1/2 对应 `low` / `medium` / `high`（文本为低/中/高，中英文都做 sanity 校验）。
-- **降级**：找不到控件时保持网页默认并在结果里标 `modelApplied:false` / `thinkingApplied:false`，不阻断；请求了非默认值但控件整体不存在时返回 `model_unavailable` / `thinking_unavailable`。
+- **降级**：未请求模型/思考时保持网页默认；显式请求非默认但控件/选项不存在时返回 `model_unavailable` / `thinking_unavailable` 明确报错，不静默使用默认；只有 `/models` 目录读取失败才回退静态目录。
 - **Deep Research**：提交前模型按钮仍存在，面板同样提供选择；但 DR 是否真正采用所选模型尚未 E2E 验证，面板注明「可能不生效」。
 - **Deep Think**：当前页面没有独立控件，本期不做。
 
@@ -378,7 +378,7 @@ npm test
 node --test --test-isolation=none
 ```
 
-当前共 **67 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定用例：
+当前共 **68 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定与模型匹配用例：
 
 ```powershell
 python -m unittest test/test_selectors.py

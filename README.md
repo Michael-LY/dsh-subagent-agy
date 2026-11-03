@@ -278,8 +278,8 @@ lib/gemini-web.js（HTTP 桥接）
 
 两个面板各有「模型」和「思考强度」下拉，选择随每次 `/run` / `/chat/send` 请求下发：
 
-- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `gem-data-id^='bard-mode-option-'` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。面板挂载时先取 `live=0` 的静态目录，点「刷新模型」才请求实时目录，避免打开面板就拉起 headless Edge。
-- **模型匹配**：按英文模型名 token（`flash-lite` / `3.8 flash` / `3.1 pro` / `4 argon`）匹配菜单文本，`data-test-id` hash 只作提示；点选后回读按钮 aria/text 校验。
+- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `[data-test-id^='bard-mode-option-']` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。面板挂载时先取 `live=0` 的静态目录，点「刷新模型」才请求实时目录，避免打开面板就拉起 headless Edge。
+- **模型匹配**：输入先经 `_model_id_from_label()` 归一化（支持 `flash` / `Flash` / `3.8 Flash 全方位帮助` 等），菜单项按 id 精确匹配（`flash-lite` / `flash` / `pro` / `argon`），点选后回读模型 id 校验；`data-test-id` hash 只作提示。
 - **思考强度**：在模型菜单底部「思考等级」二级菜单中按结构断言必须正好 3 项，索引 0/1/2 对应 `low` / `medium` / `high`（文本为低/中/高，中英文都做 sanity 校验）。
 - **降级**：未请求模型/思考时保持网页默认；显式请求非默认但控件/选项不存在时返回 `model_unavailable` / `thinking_unavailable` 明确报错，不静默使用默认；只有 `/models` 目录读取失败才回退静态目录。
 - **Deep Research**：提交前模型按钮仍存在，面板同样提供选择；但 DR 是否真正采用所选模型尚未 E2E 验证，面板注明「可能不生效」。
@@ -338,7 +338,7 @@ dsh-subagent-agy/
 - `lib/classify.js`：纯函数失败分类。`classifyFailure()` → `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`；`parseRetryAfterMs()` 解析 retry-after / `Resets in XhYmZs`。
 - `lib/client.js`：DSH 客户端面板。lazy-CJS（`window.__ModuleLoader__.load`），只依赖 React；注册两个 `sidebar.panellist` 入口（order 30 / 31）和两个 `main` keyed slot。
 - `lib/gemini-web.js`：主机侧 HTTP 桥接。`createJobQueue` 派生出 research / chat 两条串行队列；共享一个 `GeminiWorkerClient`；提供 `/models`、`/status`、`/chat/status`、`/login/init`、`/run`、`/chat/send`、`/chat/new`、`/chat/latest`、`/chat/job`、`/job`、`/latest`；注册模型可见工具 `gemini_web_research`。
-- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按英文 token 匹配菜单项。
+- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按 id 精确匹配模型菜单项。
 - `lib/worker-client.js`：常驻 worker 客户端。懒启动、`ready` 握手、请求 id 关联、progress 转发、超时 cancel、崩溃拒绝 pending、空闲 shutdown、dispose 杀进程树；`health` 暴露 `{running, ready, pid, lastHeartbeatAt, lastError, stderrTail}`。
 - `lib/parallel.js`：DSH 侧批量并发工具。
 - `scripts/gemini_research/worker.py`：常驻 Python worker，持有一个 persistent context 与 chat/research 两个 page，JSONL 协议。

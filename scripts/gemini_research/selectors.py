@@ -405,9 +405,10 @@ async def list_model_catalog(page) -> dict[str, Any]:
 
 
 async def select_model(page, model: str | None, label: str | None = None) -> dict[str, Any]:
-    """Select one model by exact stable id; verify the trigger afterwards."""
+    """Select one model by exact stable id; accept ids or UI labels as input."""
     if not model:
         return {"applied": False, "reason": "default"}
+    target_id = _model_id_from_label(model)
     button = await _model_button(page)
     if button is None:
         raise ModelUnavailable("找不到 Gemini 模型选择控件")
@@ -417,16 +418,16 @@ async def select_model(page, model: str | None, label: str | None = None) -> dic
         options = await _visible_model_options(page)
         if not options:
             raise ModelUnavailable("模型菜单为空")
-        exact = [option for option in options if _model_id_from_label(option["text"]) == model]
+        exact = [option for option in options if _model_id_from_label(option["text"]) == target_id]
         if len(exact) != 1:
             raise ModelUnavailable(f"找不到唯一模型选项：{label or model}")
         best = exact[0]
         await page.locator(MODEL_OPTION_SELECTOR).nth(best["index"]).click()
         await page.wait_for_timeout(1000)
         current = await current_model_text(page)
-        if _model_id_from_label(current) != model:
+        if _model_id_from_label(current) != target_id:
             raise ModelUnavailable(f"模型选择未生效：{label or model}")
-        return {"applied": True, "model": model, "label": best["text"]}
+        return {"applied": True, "model": target_id, "label": best["text"]}
     finally:
         try:
             await page.keyboard.press("Escape")
@@ -486,6 +487,7 @@ async def select_thinking(page, thinking: str | None) -> dict[str, Any]:
         return {"applied": True, "thinking": expected["id"], "label": items[index]["text"]}
     finally:
         try:
+            await page.keyboard.press("Escape")
             await page.keyboard.press("Escape")
         except Exception:
             pass

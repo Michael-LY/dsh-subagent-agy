@@ -17,7 +17,7 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 - `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）、把终态 status 映射成 `completed` / `aborted` / `error`，并收集 result/error 帧的错误文本供分类。不碰进程。
 - `lib/classify.js`：纯函数失败分类。`classifyFailure()` 输出 `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`，`parseRetryAfterMs()` 从文本解析 retry-after / `Resets in XhYmZs`。零依赖、可独立单测。
 - `lib/client.js`：DSH 客户端面板。lazy-CJS 格式（`window.__ModuleLoader__.load`），不需要打包器，只依赖 React。注册两个独立 `sidebar.panellist` 入口：「Gemini 调研」（`gemini-research`，order 30）与「Gemini 对话」（`gemini-chat`，order 31），以及对应的两个 `main` keyed slot。
-- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按英文 token 匹配模型菜单项。面板目录优先实时读取，失败回退这里。
+- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按 id 精确匹配模型菜单项。面板目录优先实时读取，失败回退这里。
 - `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接。`createJobQueue` 派生出 research / chat 两条独立串行队列，共享一个 `GeminiWorkerClient`（同一浏览器 profile 只允许一个实例）；负责超时终止、任务摘要、登录态汇总、模型/思考参数校验与 `/models` 目录缓存，并注册模型可见工具 `gemini_web_research`。
   - 路由：`GET /models?mode=chat|research`、`GET /status`、`GET /chat/status`、`POST /login/init`、`POST /run`、`POST /chat/send`、`POST /chat/new`、`GET /chat/latest`、`GET /chat/job?id=`、`GET /job?id=`、`GET /latest`。
   - `/status` 关键字段：`loginSaved`（`login-ok.json` 存在）、`loginReady`、`loginCheckedAt`、`loginError`、`loginRunning`、`worker`（`{running, ready, pid, lastHeartbeatAt, lastError, stderrTail}`）、`research: {running, job}`、`chat: {running, job, conversationUrl}`。

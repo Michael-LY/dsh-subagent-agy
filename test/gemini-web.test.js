@@ -238,13 +238,15 @@ test('setupGeminiWeb: /models 返回实时目录与配置默认值', async () =>
 		tools: { register() { return () => {}; } },
 	};
 	const ctx = { inject(_services, callback) { callback(sctx); } };
+	let modelCalls = 0;
 	const fakeWorker = {
 		health: { running: true, ready: true },
 		async request(command) {
 			if (command === 'models.list') {
+				modelCalls += 1;
 				return {
 					source: 'live',
-					models: [{ id: 'argon', label: '4 Argon 复杂任务', tokens: ['4 argon'], thinkingLevels: ['low', 'medium', 'high'] }],
+					models: [{ id: `call-${modelCalls}`, label: `Call ${modelCalls}`, tokens: ['call'], thinkingLevels: ['low', 'medium', 'high'] }],
 					thinking: [{ id: 'high', label: '高（超级详尽）' }],
 					deepThink: { supported: false, label: 'Deep Think' },
 				};
@@ -272,12 +274,34 @@ test('setupGeminiWeb: /models 返回实时目录与配置默认值', async () =>
 	};
 	try {
 		const modelsRoute = routes.find((entry) => entry.path.endsWith('/models'));
-		await modelsRoute.handler({ method: 'GET', url: '/api/dsh-gemini-research/models?mode=chat' }, res);
-		const body = JSON.parse(res.body);
-		assert.equal(body.ok, true);
-		assert.equal(body.source, 'live');
-		assert.equal(body.models[0].id, 'argon');
-		assert.deepEqual(body.defaults, { model: 'argon', thinking: 'high' });
+		const call = async (query) => {
+			const local = {
+				statusCode: 0,
+				headers: {},
+				setHeader(key, value) { this.headers[key] = value; },
+				end(value) { this.body = value; },
+			};
+			await modelsRoute.handler({ method: 'GET', url: `/api/dsh-gemini-research/models?${query}` }, local);
+			return JSON.parse(local.body);
+		};
+
+		const staticBody = await call('mode=chat&live=0');
+		assert.equal(staticBody.source, 'fallback');
+		assert.equal(modelCalls, 0);
+
+		const first = await call('mode=chat');
+		assert.equal(first.source, 'live');
+		assert.equal(first.models[0].id, 'call-1');
+		assert.deepEqual(first.defaults, { model: 'argon', thinking: 'high' });
+		assert.equal(modelCalls, 1);
+
+		const cached = await call('mode=chat');
+		assert.equal(cached.models[0].id, 'call-1');
+		assert.equal(modelCalls, 1);
+
+		const refreshed = await call('mode=chat&refresh=1');
+		assert.equal(refreshed.models[0].id, 'call-2');
+		assert.equal(modelCalls, 2);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

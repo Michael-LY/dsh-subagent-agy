@@ -55,6 +55,12 @@ export interface Config {
 	geminiHeadless?: boolean;
 	/** Hard timeout in milliseconds for one research job (default 900000). */
 	geminiTimeoutMs?: number;
+	/** Hard timeout in milliseconds for one chat reply (default 180000). */
+	geminiChatTimeoutMs?: number;
+	/** Idle milliseconds before the persistent browser worker is shut down (default 600000). */
+	geminiWorkerIdleMs?: number;
+	/** Browser backend: persistent worker (default) or the legacy one-shot research path. */
+	geminiWorkerMode?: 'persistent' | 'oneshot';
 	/** Provider name for the native Antigravity parallel-team variant (default `antigravity-team`). */
 	teamProviderName?: string;
 	/** Register the `antigravity-team` provider in addition to the default provider (default true). */

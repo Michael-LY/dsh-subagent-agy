@@ -1,6 +1,6 @@
 # dsh-subagent-agy
 
-将一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在 DSH 侧边栏提供 **Gemini 网页 Deep Research** 调研面板的 DSH（DeepSeek Harness）插件。
+将一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在 DSH 侧边栏提供 **Gemini 网页 Deep Research 调研**与**普通对话**两个面板的 DSH（DeepSeek Harness）插件。
 
 与 DSH 官方 `dsh-subagent-codex` / `dsh-subagent-claude-code` 同构：通过注册外部单次执行（one-shot）subagent provider，配合 `@deepseek-ai/dsh-tool-subagent` 向模型暴露工具 `subagent_agy`（触发关键词：`agy`、`antigravity`，不区分大小写）。另提供 `subagent_agy_team`（agy 原生 `invoke_subagent` 并发）和 `subagent_agy_parallel`（DSH 侧批量异步并发）两个可选入口。
 
@@ -15,7 +15,7 @@
 - [5. 失败分类与重试机制](#5-失败分类与重试机制)
 - [6. 目录结构与模块分工](#6-目录结构与模块分工)
 - [7. 验证与测试方法](#7-验证与测试方法)
-- [8. Gemini 网页调研（侧边栏面板）](#8-gemini-网页调研侧边栏面板)
+- [8. Gemini 网页调研与对话（侧边栏面板）](#8-gemini-网页调研与对话侧边栏面板)
 - [9. 已知限制与注意事项](#9-已知限制与注意事项)
 
 ---
@@ -194,7 +194,10 @@ agy --print <prompt> --output-format stream-json [--new-project | --project <nam
 | `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/chrome-profile` | Gemini 网页调研的持久化浏览器 profile 目录（目录名沿用 `chrome-profile`）；登录态保存在这里。 |
 | `geminiPython` | `string` (`min(1)`) | `python` | 运行 Playwright 脚本的 Python 可执行文件。 |
 | `geminiHeadless` | `boolean` | `true` | 调研时是否无头运行；初始化登录始终有头（可见窗口）。 |
-| `geminiTimeoutMs` | `number` | `900000` | 单次调研任务的硬超时（毫秒），默认 15 分钟。 |
+| `geminiTimeoutMs` | `number` | `900000` | 单次 Deep Research 任务的硬超时（毫秒），默认 15 分钟。 |
+| `geminiChatTimeoutMs` | `number` (`min(1000)`) | `180000` | 单条普通对话消息的硬超时（毫秒）。 |
+| `geminiWorkerIdleMs` | `number` (`min(0)`) | `600000` | 常驻浏览器 worker 的空闲回收时长（毫秒）；空闲超时后自动 shutdown 释放 profile，`0` 表示不自动回收。 |
+| `geminiWorkerMode` | `'persistent' \| 'oneshot'` | `'persistent'` | `persistent` 走常驻 worker；`oneshot` 时 Deep Research 回退到旧 `run_research.py` 单次脚本（普通对话仍走 worker）。 |
 | `teamProviderName` | `string` (`min(1)`) | `'antigravity-team'` | 原生 `invoke_subagent` 并发模式的第二个 provider 名称；必须与 `providerName` 不同。 |
 | `teamEnabled` | `boolean` | `true` | 是否注册 `antigravity-team` provider；关闭后 `subagent_agy_team` 工具不会挂载。 |
 | `parallelToolName` | `string` (`min(1)`) | `'subagent_agy_parallel'` | DSH 侧批量并发工具的名字。 |
@@ -286,8 +289,9 @@ dsh-subagent-agy/
 │   ├── run.js                 # 进程生命周期：argv 组装、spawn、流驱动、可选重试与退出结算
 │   ├── wire.js                # 纯 NDJSON 流解析器：行缓冲、Envelope 状态提取、权威答案决策
 │   ├── classify.js            # 纯函数错误分类：退出码判定、429/配额正则匹配、重试时间解析
-│   ├── client.js              # DSH 客户端面板：sidebar.panellist 入口 + main 面板
-│   ├── gemini-web.js          # 主机侧 /api/dsh-gemini-research/* 桥接与串行任务队列
+│   ├── client.js              # DSH 客户端面板：sidebar.panellist 入口 + main 面板（Gemini 调研 / Gemini 对话）
+│   ├── gemini-web.js          # 主机侧 /api/dsh-gemini-research/* 桥接；chat / research 双队列共享 worker
+│   ├── worker-client.js       # 常驻 Gemini worker 客户端：懒启动、请求关联、崩溃重启、空闲回收
 │   ├── parallel.js            # DSH 侧批量并发工具 subagent_agy_parallel
 │   └── types/
 │       └── index.d.ts         # 手写 TypeScript 类型定义（Config / Export 声明）
@@ -297,11 +301,16 @@ dsh-subagent-agy/
 ├── scripts/
 │   └── gemini_research/
 │       ├── init_login.py      # 系统默认浏览器手动登录并保存持久化 profile
-│       └── run_research.py    # Playwright 触发 Gemini 网页 Deep Research 并提取报告
+│       ├── worker.py          # 常驻 worker：一个 persistent context + chat/research 两个 page
+│       ├── chat_page.py       # 普通对话页：输入、完成判定、回复提取、多轮上下文
+│       ├── research_page.py   # Deep Research 页：计划审批、轮询报告、正文提取
+│       ├── selectors.py       # 共享选择器、登录检测、可见性与调试截图
+│       └── run_research.py    # 旧单次 Deep Research 脚本（oneshot 回退）
 └── test/
     ├── classify.test.js       # 错误分类与延时解析单元测试（覆盖配额、429、exit 2 等）
-    ├── gemini-web.test.js     # Gemini 调研桥接、队列与失败路径测试
+    ├── gemini-web.test.js     # Gemini 调研/对话桥接、双队列与登录态测试
     ├── parallel.test.js       # 批量并发任务规范化与结果渲染测试
+    ├── worker-client.test.js  # worker 协议、崩溃重启、超时与空闲回收测试
     └── wire.test.js           # 协议解析测试（7 字节分片重组、兜底答案、Envelope 校验等）
 ```
 
@@ -311,10 +320,10 @@ dsh-subagent-agy/
 
 ### 7.1 单元测试套件
 
-项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 43 个用例（新增 `parallel.test.js` 覆盖批量并发任务规范化、结果渲染与部分失败）：
+项目采用 Node.js 原生测试运行器（`node:test`），零外部测试依赖，共 57 个用例（`gemini-web.test.js` 覆盖双队列与登录态，新增 `worker-client.test.js` 覆盖 worker 协议、崩溃重启、超时与空闲回收）：
 
 ```powershell
-# 运行全部单元测试（覆盖 classify / wire / gemini-web 桥接）
+# 运行全部单元测试（覆盖 classify / wire / gemini-web / worker-client）
 npm test
 # 或直接执行：
 node --test
@@ -327,7 +336,8 @@ node --test
 确保纯 ESM 模式下无语法错误：
 
 ```powershell
-node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js
+node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js
+python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py scripts/gemini_research/worker.py scripts/gemini_research/chat_page.py scripts/gemini_research/research_page.py scripts/gemini_research/selectors.py
 ```
 
 ### 7.3 协议与分类快速冒烟
@@ -360,32 +370,47 @@ node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; no
 
 ---
 
-## 8. Gemini 网页调研（侧边栏面板）
+## 8. Gemini 网页调研与对话（侧边栏面板）
 
-插件在 DSH 左侧边栏注册「Gemini 调研」面板（`sidebar.panellist` + `main` keyed slot），用 Google AI Pro 网页端的 Deep Research 做调研。
+插件在 DSH 左侧边栏注册两个独立入口：「Gemini 调研」与「Gemini 对话」，分别调用 Google AI Pro 网页端的 Deep Research 和普通对话。两者各有一条独立任务队列，共享同一个常驻浏览器 worker（单 profile、单 persistent context、chat/research 两个 page），因此互不排队、可以同时工作。
 
 ### 8.1 组成
 
-- `lib/client.js`：侧边栏入口与面板 UI（主题输入、任务状态、报告展示与复制）。
-- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；单任务串行队列（同一浏览器 profile 只能一个实例），超时终止。
-- `gemini_web_research`：注册到 `ctx.tools` 的模型可见工具；任意对话里说「用 Gemini Deep Research 调研……」即可调用，和面板共用同一队列，等待报告返回。
+- `lib/client.js`：两个侧边栏面板。「Gemini 调研」负责 Deep Research 主题、任务状态、报告展示与复制；「Gemini 对话」负责消息列表、输入框、新对话与登录状态。
+- `lib/gemini-web.js`：主机侧 `/api/dsh-gemini-research/*` 桥接；chat / research 两条独立串行队列共享一个 worker，统一处理超时终止、`/job` 查询与登录态汇总。
+- `lib/worker-client.js`：常驻 worker 客户端（懒启动、`ready` 握手、请求 id 关联、progress 转发、崩溃自动重启、空闲自动 shutdown、dispose 杀进程树）。
+- `scripts/gemini_research/worker.py`：常驻 Python worker，持有一个 persistent context 和 chat / research 两个 page，通过 stdin/stdout JSONL 与 Node 通信（日志只走 stderr）。
+- `scripts/gemini_research/chat_page.py` / `research_page.py`：普通对话与 Deep Research 的页面操作、完成判定和结果提取。
+- `scripts/gemini_research/selectors.py`：共享选择器、可见性判断、登录检测与调试截图。
+- `gemini_web_research`：注册到 `ctx.tools` 的模型可见工具；任意对话里说「用 Gemini Deep Research 调研……」即可调用，与「Gemini 调研」面板共用 research 队列。
 - `scripts/gemini_research/init_login.py`：打开系统默认浏览器（Chrome/Edge），人工登录一次，保存持久化 profile。
-- `scripts/gemini_research/run_research.py`：Playwright 打开 Gemini → Tools → Deep Research → 提交主题 → 等研究计划 → 点 Start research → 轮询报告 → 提取正文。
+- `scripts/gemini_research/run_research.py`：旧的单次 Deep Research 脚本，`geminiWorkerMode: oneshot` 时作为回退路径。
 
 ### 8.2 首次使用
 
 1. 确认本机 `python` 与 `playwright` 可用：`pip install playwright`（使用系统默认浏览器 Chrome/Edge，不需要 `playwright install`）。
-2. 侧边栏打开「Gemini 调研」→ 点「初始化登录」→ 在弹出的系统默认浏览器里登录 Google AI Pro 账号。
-3. 回到面板填主题 →「开始 Deep Research」。
+2. 侧边栏打开「Gemini 调研」或「Gemini 对话」→ 点「初始化登录」→ 在弹出的系统默认浏览器里登录 Google AI Pro 账号。
+3. 登录后 `login-state.json` 记录最近一次实际页面验证的 `signedIn` / `checkedAt`；面板显示「登录态已验证」。`login-ok.json` 只表示历史登录文件存在（`loginSaved`），不再单独作为「已就绪」依据。
 
-**对话内使用**：登录态就绪后，在任意聊天里直接说「用 Gemini Deep Research 调研……」；模型会调用 `gemini_web_research` 工具，等报告生成后把正文返回当前对话。工具和面板共用同一个任务队列，不会并发打开两个浏览器。
+### 8.3 使用
 
-### 8.4 风险与边界
+- **Gemini 对话**：在「Gemini 对话」面板输入消息，Enter 发送、Shift+Enter 换行；回复完成后自动追加，多轮上下文保留在同一 page 内；「新对话」清空当前对话上下文。
+- **Gemini 调研**：在「Gemini 调研」面板填主题 →「开始 Deep Research」；或在任意聊天里让模型调用 `gemini_web_research` 工具，等报告生成后把正文返回当前对话。
+- 两条队列互不等待：research 跑 5–10 分钟时 chat 仍可正常使用；两者底层共享一个 worker 的两个 page，不会并发打开两个浏览器。
+
+### 8.4 配置
+
+- `geminiChatTimeoutMs`（默认 `180000`）：单条普通对话消息的硬超时（毫秒）。
+- `geminiWorkerIdleMs`（默认 `600000`）：worker 空闲多久后自动 shutdown 释放 profile。
+- `geminiWorkerMode`（默认 `persistent`）：设为 `oneshot` 时 Deep Research 回退到旧 `run_research.py` 路径（普通对话仍走 worker）。
+
+### 8.5 风险与边界
 
 - Google 服务条款禁止自动化访问；网页端自动化可能触发风控甚至封号，建议使用专用账号并控制频率，不要拿主账号批量跑。
 - AI Pro 的 Deep Research 约为每天 20 次；单次通常 5–10 分钟。
 - 网页 UI 改版会导致选择器失效，脚本会保存调试截图（profile 目录 `debug-*.png`），整体属于 best-effort。
-- 面板只展示本机生成的报告；不上传内容，也不替代 Google 官方界面。
+- 同一个 `geminiProfileDir` 同时只能有一个 worker（一个浏览器实例）；初始化登录前会先停掉 worker，登录窗口关闭后下一次任务再懒启动。
+- 面板只展示本机生成的内容；不上传内容，也不替代 Google 官方界面。
 
 ---
 

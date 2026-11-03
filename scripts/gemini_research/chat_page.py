@@ -29,11 +29,17 @@ class ChatPage:
         self.page = None
 
     async def ensure_page(self, conversation_url: str | None = None):
+        target = conversation_url if conversation_url and CONVERSATION_URL_RE.match(conversation_url) else GEMINI_URL
         if self.page is None or self.page.is_closed():
             self.page = await self.context.new_page()
-            target = conversation_url if conversation_url and CONVERSATION_URL_RE.match(conversation_url) else GEMINI_URL
             await self.page.goto(target, wait_until="domcontentloaded", timeout=60000)
             await self.page.wait_for_timeout(1500)
+        elif target != GEMINI_URL:
+            current_match = CONVERSATION_URL_RE.match(self.page.url or "")
+            target_match = CONVERSATION_URL_RE.match(target)
+            if target_match and (current_match is None or current_match.group(1) != target_match.group(1)):
+                await self.page.goto(target, wait_until="domcontentloaded", timeout=60000)
+                await self.page.wait_for_timeout(1500)
         # Normal chat is allowed without Google sign-in (Gemini web supports
         # it), but the status must say so: no history and no Deep Research.
         signed_in = await is_logged_in(self.page)

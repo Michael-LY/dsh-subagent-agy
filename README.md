@@ -357,7 +357,11 @@ npm test
 node --test --test-isolation=none
 ```
 
-当前共 **57 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `worker-client.js` / `parallel.js`。
+当前共 **60 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定用例：
+
+```powershell
+python -m unittest test/test_selectors.py
+```
 
 > DSH 受限 shell 内若报 `spawn EPERM`，改用 `node --test --test-isolation=none`。
 

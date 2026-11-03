@@ -81,7 +81,7 @@ def write_json_file(path: str | os.PathLike[str], payload: Any) -> None:
     """Write one small JSON result atomically enough for the host reader."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f"{target.name}.tmp")
+    temporary = target.with_name(f"{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
     with open(temporary, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False)
     os.replace(temporary, target)
@@ -217,7 +217,7 @@ async def type_and_submit(page, text: str) -> None:
     await page.keyboard.press("Enter")
     await page.wait_for_timeout(700)
     try:
-        remaining = (await page.locator(EDITOR_SELECTORS[0]).first.inner_text() or "").strip()
+        remaining = (await editor.inner_text() or "").strip()
     except Exception:
         remaining = ""
     if remaining:
@@ -225,6 +225,69 @@ async def type_and_submit(page, text: str) -> None:
         if send is not None:
             await send.click()
             await page.wait_for_timeout(700)
+
+
+def should_finish_reply(
+    *,
+    last_text: str,
+    stable_for: float,
+    stop_count: int,
+    saw_stop: bool,
+    action_in_latest: int,
+    min_stable_sec: float = 2.5,
+) -> bool:
+    """Pure completion policy for one chat reply.
+
+    Stop visible is a hard veto: never finish while generation is still
+    running. After it disappears, either we saw it during this reply or the
+    newest response bubble itself exposes its action toolbar.
+    """
+    return (
+        bool(last_text)
+        and stable_for >= min_stable_sec
+        and stop_count == 0
+        and (saw_stop or action_in_latest > 0)
+    )
+
+
+async def count_actions_in_latest_response(page, max_per_selector: int = 3) -> int:
+    """Count action buttons scoped to the newest response bubble only.
+
+    Page-wide counts are wrong in multi-turn conversations: every historical
+    answer keeps its copy/regenerate buttons visible.
+    """
+    for container_selector in ("model-response", "message-content", ".model-response-text", "div.markdown"):
+        try:
+            nodes = page.locator(container_selector)
+            count = await nodes.count()
+            if count == 0:
+                continue
+            node = nodes.nth(count - 1)
+            if not await node.is_visible():
+                continue
+            total = 0
+            candidates = [node]
+            try:
+                parent = node.locator("xpath=ancestor::model-response[1]")
+                if await parent.count() > 0:
+                    candidates.append(parent.first)
+            except Exception:
+                pass
+            for candidate in candidates:
+                for action_selector in ACTION_SELECTORS:
+                    try:
+                        actions = candidate.locator(action_selector)
+                        action_count = await actions.count()
+                        for index in range(min(action_count, max_per_selector)):
+                            if await actions.nth(index).is_visible():
+                                total += 1
+                    except Exception:
+                        continue
+                if total > 0:
+                    return total
+        except Exception:
+            continue
+    return 0
 
 
 async def wait_for_reply(page, before_count: int, timeout_sec: int = 180) -> dict[str, Any]:
@@ -247,9 +310,15 @@ async def wait_for_reply(page, before_count: int, timeout_sec: int = 180) -> dic
             stop_count = await count_visible(page, STOP_SELECTORS)
             if stop_count > 0:
                 saw_stop = True
-            action_count = await count_visible(page, ACTION_SELECTORS)
+            action_in_latest = await count_actions_in_latest_response(page)
             stable_for = time.monotonic() - last_change
-            if last_text and stable_for >= 2.5 and (stop_count == 0 or action_count > 0):
+            if should_finish_reply(
+                last_text=last_text,
+                stable_for=stable_for,
+                stop_count=stop_count,
+                saw_stop=saw_stop,
+                action_in_latest=action_in_latest,
+            ):
                 return {
                     "reply": last_text,
                     "sawStop": saw_stop,

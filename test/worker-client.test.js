@@ -10,12 +10,14 @@ const FAKE_WORKER = `
 import { createInterface } from 'node:readline';
 
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\\n');
+let ignoreShutdown = false;
 send({ type: 'ready', pid: process.pid });
 const input = createInterface({ input: process.stdin });
 input.on('line', (line) => {
   let message;
   try { message = JSON.parse(line); } catch { return; }
   if (message.type === 'shutdown') {
+    if (ignoreShutdown) return;
     setTimeout(() => process.exit(0), 10);
     return;
   }
@@ -36,6 +38,11 @@ input.on('line', (line) => {
   }
   if (command === 'slow') {
     setTimeout(() => send({ type: 'result', id, ok: true, data: { slow: true } }), 500);
+    return;
+  }
+  if (command === 'stubborn') {
+    ignoreShutdown = true;
+    send({ type: 'result', id, ok: true, data: { stubborn: true } });
     return;
   }
   send({ type: 'result', id, ok: false, error: { code: 'unknown', message: 'unknown command' } });
@@ -119,6 +126,50 @@ test('GeminiWorkerClient: idle 超时自动 shutdown', async () => {
 		await client.request('echo', { idle: true });
 		await new Promise((resolve) => setTimeout(resolve, 120));
 		assert.equal(client.health.running, false);
+	} finally {
+		await client.dispose();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('GeminiWorkerClient: pending 请求期间 idle 定时器不会误杀 worker', async () => {
+	const { client, dir } = makeClient({ idleTimeoutMs: 40 });
+	try {
+		const slow = client.request('slow', {}, { timeoutMs: 2000 });
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		// Without the pending guard this would have been shut down by now.
+		assert.equal(client.health.running, true);
+		assert.deepEqual(await slow, { slow: true });
+	} finally {
+		await client.dispose();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('GeminiWorkerClient: 并发请求互不干扰', async () => {
+	const { client, dir } = makeClient({ idleTimeoutMs: 40 });
+	try {
+		const slow = client.request('slow', {}, { timeoutMs: 2000 });
+		const echo = client.request('echo', { concurrent: true });
+		assert.deepEqual(await echo, { echo: { concurrent: true } });
+		assert.deepEqual(await slow, { slow: true });
+		assert.equal(client.health.running, true);
+	} finally {
+		await client.dispose();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('GeminiWorkerClient: 旧进程延迟退出不影响后续 worker', async () => {
+	const { client, dir } = makeClient({ shutdownGraceMs: 30 });
+	try {
+		assert.deepEqual(await client.request('stubborn'), { stubborn: true });
+		// The stubborn worker ignores the shutdown command; shutdown kills it
+		// after the grace period and immediately returns. Its late exit event
+		// must not close the next worker's line reader.
+		await client.shutdown();
+		assert.deepEqual(await client.request('echo', { afterStale: true }), { echo: { afterStale: true } });
+		assert.equal(client.health.ready, true);
 	} finally {
 		await client.dispose();
 		rmSync(dir, { recursive: true, force: true });

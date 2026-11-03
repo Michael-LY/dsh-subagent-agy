@@ -4,7 +4,7 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 
 ## 仓库形态
 
-- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；使用 `node:test` 单测（`test/*.test.js`，当前 57 个用例，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `worker-client.js` / `parallel.js`）。
+- 纯 ESM JavaScript：无构建、无 lint、无本地 `node_modules`；使用 `node:test` 单测（`test/*.test.js`，当前 60 个用例，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `worker-client.js` / `parallel.js`），另有 `test/test_selectors.py` 覆盖完成判定纯函数。
 - **已是 git 仓库**：origin `https://github.com/Michael-LY/dsh-subagent-agy.git`；主干 `master`，历史功能分支 `feature/gemini-web-research` / `feature/agy-parallel-subagents` 已合并；新功能分支 `feature/gemini-web-chat` 承载 Gemini 对话面板与常驻 worker。
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `scripts/gemini_research/*.py` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
@@ -72,7 +72,8 @@ DSH 插件 `dsh-subagent-agy`（v0.4.0）：把一次性任务委派给本机 An
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js   # 语法
 python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py scripts/gemini_research/worker.py scripts/gemini_research/chat_page.py scripts/gemini_research/research_page.py scripts/gemini_research/selectors.py   # Python 语法
-node --test   # 单测（57 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
+node --test   # 单测（60 用例；DSH 沙箱内若 spawn EPERM，用 node --test --test-isolation=none）
+python -m unittest test/test_selectors.py   # Python 完成判定纯函数测试
 
 # 协议解析冒烟（7 字节强制分片，模拟真实 chunk 边界）：期望 completed + 文本
 node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new AntigravityStream('t');const t=[JSON.stringify({event:'init',conversation_id:'c1'}),JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta:'par'}}),JSON.stringify({event:'result',result:{status:'SUCCESS',response:'partial answer'}})].join('\n')+'\n';for(let i=0;i<t.length;i+=7)s.push(t.slice(i,i+7));s.end();console.log(s.result(),s.conversationId)})"

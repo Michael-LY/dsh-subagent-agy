@@ -12,7 +12,9 @@ from typing import Any
 from selectors import (
     GEMINI_URL,
     LoginRequired,
+    apply_generation_options,
     is_logged_in,
+    list_model_catalog,
     record_login_state,
     response_texts,
     type_and_submit,
@@ -46,8 +48,17 @@ class ChatPage:
         record_login_state(self.profile_dir, signed_in, None if signed_in else "logged_out_chat")
         return self.page
 
-    async def send(self, message: str, timeout_sec: int = 180, conversation_url: str | None = None) -> dict[str, Any]:
+    async def send(
+        self,
+        message: str,
+        timeout_sec: int = 180,
+        conversation_url: str | None = None,
+        model: str | None = None,
+        model_label: str | None = None,
+        thinking: str | None = None,
+    ) -> dict[str, Any]:
         page = await self.ensure_page(conversation_url)
+        applied = await apply_generation_options(page, model=model, thinking=thinking, model_label=model_label)
         before_count = len(await response_texts(page))
         await type_and_submit(page, message)
         result = await wait_for_reply(page, before_count, timeout_sec)
@@ -58,7 +69,12 @@ class ChatPage:
             "elapsedSec": result["elapsedSec"],
             "conversationUrl": conversation_url,
             "signedIn": await is_logged_in(page),
+            **applied,
         }
+
+    async def list_models(self) -> dict[str, Any]:
+        page = await self.ensure_page()
+        return await list_model_catalog(page)
 
     async def new_chat(self) -> dict[str, Any]:
         page = await self.ensure_page()

@@ -61,6 +61,10 @@ export interface Config {
 	geminiWorkerIdleMs?: number;
 	/** Browser backend: persistent worker (default) or the legacy one-shot research path. */
 	geminiWorkerMode?: 'persistent' | 'oneshot';
+	/** Default Gemini model id selected by the panels when no local preference exists. */
+	geminiDefaultModel?: string;
+	/** Default Gemini thinking level selected by the panels when no local preference exists. */
+	geminiDefaultThinking?: string;
 	/** Provider name for the native Antigravity parallel-team variant (default `antigravity-team`). */
 	teamProviderName?: string;
 	/** Register the `antigravity-team` provider in addition to the default provider (default true). */

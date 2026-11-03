@@ -22,7 +22,7 @@ from playwright.async_api import async_playwright
 from browser import browser_label, default_browser_channel
 from chat_page import ChatPage
 from research_page import ResearchPage
-from selectors import LoginRequired, record_login_state
+from selectors import LoginRequired, ModelUnavailable, ThinkingUnavailable, record_login_state
 
 DEFAULT_CHAT_TIMEOUT_SEC = 180
 DEFAULT_RESEARCH_TIMEOUT_SEC = 900
@@ -127,6 +127,9 @@ class Worker:
                     str(payload.get("message") or ""),
                     int(payload.get("timeoutSec") or DEFAULT_CHAT_TIMEOUT_SEC),
                     str(payload.get("conversationUrl") or "") or None,
+                    model=str(payload.get("model") or "") or None,
+                    model_label=str(payload.get("modelLabel") or "") or None,
+                    thinking=str(payload.get("thinking") or "") or None,
                 )
             elif command == "chat.new":
                 data = await self.chat.new_chat()
@@ -134,7 +137,14 @@ class Worker:
                 data = await self.research.run(
                     str(payload.get("topic") or ""),
                     int(payload.get("timeoutSec") or DEFAULT_RESEARCH_TIMEOUT_SEC),
+                    model=str(payload.get("model") or "") or None,
+                    model_label=str(payload.get("modelLabel") or "") or None,
+                    thinking=str(payload.get("thinking") or "") or None,
                 )
+            elif command == "models.list":
+                mode = str(payload.get("mode") or "chat")
+                target = self.research if mode == "research" else self.chat
+                data = await target.list_models()
             elif command == "status":
                 data = {
                     "chat": await self.chat.status() if self.chat is not None else {"signedIn": None, "pageReady": False},
@@ -169,7 +179,7 @@ class Worker:
                 "type": "result",
                 "id": request_id,
                 "ok": False,
-                "error": {"code": "worker_error", "message": str(error)},
+                "error": {"code": getattr(error, "code", "worker_error"), "message": str(error)},
             })
 
 

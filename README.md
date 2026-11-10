@@ -3,7 +3,7 @@
 DSH（DeepSeek Harness）插件：把一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在侧边栏提供 **Gemini 网页 Deep Research** 与 **Gemini 网页对话**两个独立面板。
 
 - npm 包名：`dsh-subagent-agy`
-- 当前版本：`0.5.0`
+- 当前版本：`0.5.1`
 - 仓库：<https://github.com/Michael-LY/dsh-subagent-agy>
 
 ---
@@ -87,7 +87,7 @@ pnpm install
 
 ### 2.4 环境要求
 
-- Node.js `>=22.19.0`，DSH `>=0.2.1-rc.2 <0.3.0-0`。
+- Node.js `>=22.19.0`，DSH `>=0.2.2-rc.1 <0.3.0-0`。
 - `agy` CLI 已安装并完成本机登录（默认路径 `%USERPROFILE%\.gemini\bin\agy.exe`）。
 - Gemini 网页功能需要本机 `python` 与 `playwright`（`pip install playwright`）；使用系统默认浏览器 Chrome/Edge，不需要 `playwright install`。
 

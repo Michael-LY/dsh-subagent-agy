@@ -15,13 +15,19 @@ export type AntigravityPermissionMode = 'auto' | 'dangerously-skip-permissions';
 /** Reasoning effort accepted by the Antigravity CLI. */
 export type AntigravityEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+/** Transport channel: legacy stream-json (default) or ACP JSON-RPC. */
+export type AntigravityTransport = 'stream-json' | 'acp';
+
+/** ACP permission request handling policy. */
+export type AcpPermissionPolicy = 'auto-approve' | 'first-allow' | 'reject' | 'manual';
+
 /** Deployment-owned CLI path, model, permission, environment, and process-release settings. */
 export interface Config {
 	/** Provider name on `ctx.subagents` (default `antigravity`). */
 	providerName?: string;
 	/** Absolute path to the `agy` executable (default `%USERPROFILE%/.gemini/bin/agy.exe`). */
 	executable?: string;
-	/** Native Antigravity model fixed for this instance; omitted to inherit CLI settings. */
+	/** Native Antigravity model fixed for this instance (default `gemini-3.8-flash-medium`); explicit values win. */
 	model?: string;
 	/** Native reasoning effort fixed for this instance. */
 	effort?: AntigravityEffort;
@@ -45,6 +51,20 @@ export interface Config {
 	fallbackModel?: string;
 	/** Retry once with a short backoff when the attempt is rate-limited (HTTP 429). */
 	retryOnRateLimit?: boolean;
+	/** Transport channel; default 'stream-json' preserves existing behavior. */
+	transport?: AntigravityTransport;
+	/** ACP protocolVersion for initialize (default 1). */
+	acpProtocolVersion?: number;
+	/** Timeout (ms) for ACP handshake/session requests (default 30000). */
+	acpRequestTimeoutMs?: number;
+	/** Timeout (ms) for a single ACP prompt; 0 = unlimited (default 0). */
+	acpPromptTimeoutMs?: number;
+	/** How to answer session/request_permission (default 'auto-approve'; forced to 'auto-approve' under dangerously-skip-permissions). */
+	acpPermissionPolicy?: AcpPermissionPolicy;
+	/** Auto-fallback to stream-json when ACP handshake fails before prompt (default true). */
+	acpFallbackToStreamJson?: boolean;
+	/** Extra argv appended after `agy acp` (default []). */
+	acpExtraArgs?: string[];
 	/** Grace in milliseconds between managed-range termination tiers. */
 	disposeGraceMs?: number;
 	/** Directory of the persistent browser profile used by the Gemini web panels (default `~/.dsh/gemini-web-research/browser-profile`). */

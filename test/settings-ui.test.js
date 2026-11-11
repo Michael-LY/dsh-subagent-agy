@@ -117,7 +117,7 @@ test('serialize round-trips list and env', () => {
 
 test('projectFieldDefaults gives sane defaults per control', () => {
 	assert.equal(I.projectFieldDefaults('model'), 'gemini-3.8-flash');
-	assert.equal(I.projectFieldDefaults('transport'), 'stream-json');
+	assert.equal(I.projectFieldDefaults('transport'), 'acp');
 	assert.equal(I.projectFieldDefaults('retryOnRateLimit'), false);
 	assert.deepEqual(I.projectFieldDefaults('addDirs'), []);
 	assert.deepEqual(I.projectFieldDefaults('env'), {});

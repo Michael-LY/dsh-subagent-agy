@@ -59,7 +59,7 @@
 | `model` | 模型 | select（下拉） | `gemini-3.8-flash` | 选项取自 `agy models` 的基础模型：`gemini-3.8-flash` / `gemini-4-argon` / `claude-opus-5-5` / `claude-sonnet-5-5` / `gpt-oss-120b`；显式值始终优先。 |
 | `effort` | 思考强度 | select（下拉） | `medium` | 推理档位；选项随所选模型过滤（`low/medium/high`，`gpt-oss-120b` 仅 `medium`）。ACP 下会拼成模型名后缀（如 `gemini-3.8-flash-medium`）。 |
 | `permissionMode` | 权限模式 | select | `dangerously-skip-permissions` | `auto` 在 print 模式下工具确认会被软拒，仅适合无需工具的 prompt。 |
-| `transport` | 传输方式 | select | `stream-json` | `stream-json` / `acp`。切到 `acp` 后 ACP 组生效，`printTimeout` / `jsonSchema` 等失效。 |
+| `transport` | 传输方式 | select | `acp` | `acp` / `stream-json`。默认 ACP；握手失败自动回退 stream-json。切到 ACP 后 ACP 组生效，`printTimeout` / `jsonSchema` 等失效。 |
 
 ### 3.2 传输与 ACP（acp，6 项）
 
@@ -202,7 +202,7 @@ pnpm install        # 沙箱挡就换真实终端执行
 ### 5.3 手工验收步骤（需人眼看 UI，本机无法自动验证）
 
 1. **入口**：打开「设置」→ 左侧出现「Antigravity」（order 50，位于 General/Plugins 之后），且**只有一个**该入口（若出现两个，见 [settings-ui-design.md](./settings-ui-design.md) §3.5/§10.3）。
-2. **字段渲染**：显示 5 个分组、35 个字段；默认值可见（`model=gemini-3.8-flash`、`effort=medium`、`transport=stream-json`、`parallelMaxTasks=8`、`disposeGraceMs=3000` 等）；`model` / `effort` 为下拉选择；`geminiProfileDir` 显示为占位提示而非已填值。
+2. **字段渲染**：显示 5 个分组、35 个字段；默认值可见（`model=gemini-3.8-flash`、`effort=medium`、`transport=acp`、`parallelMaxTasks=8`、`disposeGraceMs=3000` 等）；`model` / `effort` / `transport` 为下拉选择；`geminiProfileDir` 显示为占位提示而非已填值。
 3. **未变化不写盘**：点进普通文本字段（如 `model`）不改内容→点别处失焦：**应无「保存中…」、无「已覆盖」、不触发重载**。
 4. **标量读写**：改 `model` 为其它值→失焦→短暂「保存中…」→重进页面值保留。
 5. **数组/env**：`addDirs` 填两行、`env` 填 `FOO=bar`→失焦→重进回显一致；`env` 故意写一行无 `=`（如 `BADLINE`）→行内报错且**未**写盘。

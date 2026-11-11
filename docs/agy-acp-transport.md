@@ -9,7 +9,7 @@
 ## 0. 结论速览
 
 - `agy 1.5.4` 起自带 `agy acp` 子命令：常驻 **stdio JSON-RPC 2.0** 服务器，**一行一条 JSON（NDJSON）**。实测 `initialize` → `session/new` → `session/prompt` 全部通过，终态返回 `stopReason: "end_turn"` 与答案文本。
-- 本插件新增 **`transport` 双轨**：`'stream-json'`（默认，行为零变化）/ `'acp'`（opt-in）。ACP 逻辑全部落在新文件 `lib/acp-client.js`，`lib/index.js` 只加一个分支，两条路径返回**同形 run handle**，上层无感。
+- 本插件新增 **`transport` 双轨**：`'acp'`（默认）/ `'stream-json'`（可选旧通道）。ACP 逻辑全部落在新文件 `lib/acp-client.js`，`lib/index.js` 只加一个分支，两条路径返回**同形 run handle**，上层无感。
 - 默认模型改为 `gemini-3.8-flash`（`lib/run.js` 的 `DEFAULT_MODEL`），思考强度默认 `medium`（`DEFAULT_EFFORT`）：stream-json 默认带 `--model gemini-3.8-flash --effort medium`；ACP 会拼成 `gemini-3.8-flash-medium` 再 `session/new` / `session/set_model`；**显式 `model` / `effort` 始终优先**。
 - 验证：`node --check` 全通过；`node --test` **87 通过 / 0 失败**（原有 68 + ACP 19）。
 - 部署：新增 `lib/acp-client.js` 后必须在 profile 执行 `pnpm install` 并重启 GUI（硬链接只覆盖已有文件，不覆盖新增文件）。
@@ -58,7 +58,7 @@
 
 ### 2.1 开启 ACP（默认不开）
 
-默认 `transport: 'stream-json'`，不配置就是老行为。要启用 ACP，在 profile 的 `cordis.patch.yml` 里给 provider 加一行：
+默认 `transport: 'acp'`；握手/建会话失败会自动回退 `stream-json` 一次。要强制旧通道，在 profile 的 `cordis.patch.yml` 里给 provider 设 `transport: stream-json`：
 
 ```yaml
 - insert:
@@ -74,7 +74,7 @@
 
 | 字段 | 类型 / 校验 | 默认值 | 说明 |
 |---|---|---|---|
-| `transport` | `stream-json \| acp` | `stream-json` | 传输通道。默认保持旧行为，ACP 为 opt-in。 |
+| `transport` | `stream-json \| acp` | `acp` | 传输通道。默认 ACP；失败可自动回退 stream-json。 |
 | `acpProtocolVersion` | `number` (`min(1)`) | `1` | `initialize.protocolVersion`。服务器回报不同版本时取服务器值并记 warn，不直接失败。 |
 | `acpRequestTimeoutMs` | `number` (`min(1000)`) | `30000` | 短请求超时：`initialize` / `session/new` / `session/set_model`（`session/close` 取 `min(该值, 5000)`）。 |
 | `acpPromptTimeoutMs` | `number` (`min(0)`) | `0` | 单轮 `session/prompt` 超时；`0` = 不限，靠上层 abort。 |
@@ -159,7 +159,7 @@ apply()  (lib/index.js)
   └─ 注册 provider：antigravity / antigravity-team（同一类，共用 transport 配置）
         │
 provider.start(request)                      ← transport 分支点（lib/index.js）
-  ├─ transport === 'stream-json'（默认）
+  ├─ transport === 'stream-json'（显式选择）
   │    └─ startAntigravityRun[WithRetry]()   (lib/run.js)
   │         └─ spawn agy --print … --output-format stream-json
   │              └─ AntigravityStream (lib/wire.js) → settleRunResult → { output, stopReason }
@@ -213,7 +213,7 @@ provider.start(request)                      ← transport 分支点（lib/index
 
 ## 4. 与 stream-json 的差异对照与适用场景
 
-| 维度 | `stream-json`（默认） | `acp` |
+| 维度 | `stream-json`（可选） | `acp`（默认） |
 |---|---|---|
 | 子命令 / 生命周期 | `agy --print … --output-format stream-json`，一次性，exit 0 即结束 | `agy acp`，**长驻服务器**，必须显式 `dispose()` 终止 |
 | stdin | `'ignore'` | **`'pipe'`（双向发包）** |
@@ -408,7 +408,7 @@ pnpm install
 - 首轮 2 个 MAJOR 已修复并有源码 + 新增用例双重证据：
   1. `startAcpRunWithRetry` 误用 `SubagentRun` 上不存在的 `.teardown()` / `.requestCancel()` → 已改为 `dispose()`，包装层 `result` 永不 reject，并补了「quota → fallbackModel 重试」与「首轮成功 dispose 回收内层进程」两个用例；
   2. `initialize` 声明 `terminal: true` 却未实现 `terminal/*` → 已改为 `terminal: false`（构造默认与 `startAcpRun` 显式声明两处），用例断言 `clientCapabilities.terminal === false`。
-- 默认 `transport=stream-json` 路径零行为变化：`lib/index.js` 为纯增量 diff，全量用例（含原有 wire / classify / gemini / worker / parallel）无回归。
+- 默认 `transport=acp`；`stream-json` 路径仍可用且行为不变（显式选择时）。
 - 协议合规（NDJSON 分帧、JSON-RPC id 关联、`session/new` / `session/prompt` 形状、权限反向请求必答、stopReason 映射、dispose 清理、`classifyFailure` 复用）逐项通过。
 - 代码风格合规：Tab 缩进、JSDoc、纯 ESM、只用 `node:` 内置模块 + 既有 Host 包，无新增第三方依赖。
 - 复核运行结果：`node --check` 全通过；`node --test` **87 通过 / 0 失败**；ACP 单独 **19 通过 / 0 失败**。

@@ -205,8 +205,8 @@ ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTime
 |---|---|---|---|
 | `providerName` | `string` (`min(1)`) | `antigravity` | 注册到 `ctx.subagents` 的 provider 名，须与工具绑定名一致。 |
 | `executable` | `string` (`min(1)`) | `%USERPROFILE%/.gemini/bin/agy.exe` | `agy` 可执行文件绝对路径。 |
-| `model` | `string` (`min(1)`) | `gemini-3.8-flash-medium` | 模型名，如 `gemini-3.8-flash-medium`、`gemini-4-argon-high`、`claude-opus-5-5-high`；显式值始终优先。 |
-| `effort` | `low \| medium \| high \| xhigh \| max` | 无 | 推理档位，映射 `--effort`。 |
+| `model` | `string` (`min(1)`) | `gemini-3.8-flash` | 基础模型名，取自 `agy models`（如 `gemini-3.8-flash`、`gemini-4-argon`、`claude-opus-5-5`、`gpt-oss-120b`）；思考强度由 `effort` 单独指定，显式值始终优先。 |
+| `effort` | `low \| medium \| high \| xhigh \| max` | `medium` | 推理档位，映射 `--effort`；ACP 下会拼到模型名后缀（如 `gemini-3.8-flash-medium`）。 |
 | `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理后的环境之上。 |
 | `permissionMode` | `dangerously-skip-permissions \| auto` | `dangerously-skip-permissions` | 权限模式。print 模式下工具确认会被软拒，默认跳过权限；`auto` 仅适合纯问答。 |
 | `extraArgs` | `string[]` | `[]` | 直接追加到 `agy` 命令行。 |

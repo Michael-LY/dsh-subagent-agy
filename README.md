@@ -3,7 +3,7 @@
 DSH（DeepSeek Harness）插件：把一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在侧边栏提供 **Gemini 网页 Deep Research** 与 **Gemini 网页对话**两个独立面板。
 
 - npm 包名：`dsh-subagent-agy`
-- 当前版本：`0.6.0`
+- 当前版本：`0.6.1`
 - 仓库：<https://github.com/Michael-LY/dsh-subagent-agy>
 
 ---

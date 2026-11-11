@@ -1,6 +1,6 @@
 # AGENTS.md
 
-DSH 插件 `dsh-subagent-agy`（v0.5.1）：把一次性任务委派给本机 Antigravity CLI（`agy`），并支持 Gemini 网页 Deep Research、普通对话、并发/团队子智能体。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`；npm 包名同为 `dsh-subagent-agy`。
+DSH 插件 `dsh-subagent-agy`（v0.6.0）：把一次性任务委派给本机 Antigravity CLI（`agy`），并支持 Gemini 网页 Deep Research、普通对话、并发/团队子智能体。部署实例在 `%USERPROFILE%\.dsh\profiles\desktop`；npm 包名同为 `dsh-subagent-agy`。
 
 ## 仓库形态
 
@@ -9,7 +9,7 @@ DSH 插件 `dsh-subagent-agy`（v0.5.1）：把一次性任务委派给本机 An
 - `lib/*.js` 就是发布源码（Tab 缩进、JSDoc 类型）。`lib/types/index.d.ts` **不是** tsc 生成的，改 `Config` / 导出后要手写同步。
 - `package.json` 的 `files` 里 lib 部分只收 `lib/*.js`（顶层，不含子目录）加 `lib/types/**/*.d.ts`（另有 `icon.svg` / `README.md` / `locale/*.json` / `scripts/gemini_research/*.py` / `cordis.patch.yml`）：新模块放 `lib/` 顶层无需改白名单，放子目录则必须补，否则装进 profile 后缺失。
 - `docs/headless-scripting-plan.md`：headless 能力嫁接（超时/结构化输出/附加目录/配额降级）的调研与取舍记录，改相关功能前先读。
-- 包版本 `0.5.1`；`peerDependencies` 跟随 DSH `0.2.2-rc.1` / cordis `~4.1.0`，升级时一起动。
+- 包版本 `0.6.0`；`peerDependencies` 跟随 DSH `0.2.2-rc.1` / cordis `~4.1.0`，升级时一起动。
 - npm 发布：`package.json` 已去掉 `private`，`publishConfig.access=public`；当前账号 `mokngai`，发布前先 `npm pack --dry-run`，发布命令 `npm publish --access public`。不要把 `.tgz` 提交进仓库。
 
 ## 模块分工

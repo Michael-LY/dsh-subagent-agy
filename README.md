@@ -128,21 +128,21 @@ pnpm install
 
 | `transport` | 通道 | 说明 |
 |---|---|---|
-| `stream-json`（默认） | `agy --print … --output-format stream-json` | 一次性进程、单向 NDJSON 事件流；现有行为，零改动。 |
-| `acp` | `agy acp` | 常驻 stdio JSON-RPC 2.0 服务器（NDJSON），有 `initialize` / `session/new` / `session/prompt`、会话内流式更新，以及权限反向请求 `session/request_permission`。 |
+| `acp`（默认） | `agy acp` | 常驻 stdio JSON-RPC 2.0 服务器（NDJSON），有 `initialize` / `session/new` / `session/prompt`、会话内流式更新，以及权限反向请求 `session/request_permission`。 |
+| `stream-json` | `agy --print … --output-format stream-json` | 一次性进程、单向 NDJSON 事件流；旧通道，仍可用。 |
 
-默认仍是 `stream-json`，不配置即老行为。要启用 ACP，在 profile 的 `cordis.patch.yml` 里给 `- id: subagent-antigravity` 加 `transport: acp`：
+默认使用 `acp`；握手/建会话失败会自动回退 `stream-json` 一次（`acpFallbackToStreamJson: true`）。如需强制走旧通道，在 profile 的 `cordis.patch.yml` 里给 `- id: subagent-antigravity` 设 `transport: stream-json`：
 
 ```yaml
 - insert:
     - id: subagent-antigravity
       config:
-        transport: acp
+        transport: stream-json
 ```
 
 ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTimeoutMs` / `acpPermissionPolicy` / `acpFallbackToStreamJson` / `acpExtraArgs`）的默认值与行为、与 stream-json 的差异对照、验证与回退方式，见 **[docs/agy-acp-transport.md](docs/agy-acp-transport.md)**。两条要点先记住：
 
-- ACP 下 `effort` / `printTimeout` / `jsonSchema` **不生效**（会记 warn），`addDirs` 改走 `session/new.additionalDirectories`；握手失败默认自动回退 stream-json（`acpFallbackToStreamJson`）。
+- ACP 下 `printTimeout` / `jsonSchema` **不生效**（会记 warn），`effort` 会拼成模型名后缀，`addDirs` 改走 `session/new.additionalDirectories`；握手失败默认自动回退 stream-json（`acpFallbackToStreamJson`）。
 - 新增的 `lib/acp-client.js` 需要按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 才会同步，然后重启 GUI。
 
 ### 3.6 图形化设置（Settings）

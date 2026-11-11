@@ -116,7 +116,7 @@ test('serialize round-trips list and env', () => {
 });
 
 test('projectFieldDefaults gives sane defaults per control', () => {
-	assert.equal(I.projectFieldDefaults('model'), 'gemini-3.8-flash-medium');
+	assert.equal(I.projectFieldDefaults('model'), 'gemini-3.8-flash');
 	assert.equal(I.projectFieldDefaults('transport'), 'stream-json');
 	assert.equal(I.projectFieldDefaults('retryOnRateLimit'), false);
 	assert.deepEqual(I.projectFieldDefaults('addDirs'), []);
@@ -129,6 +129,18 @@ test('isFieldOverridden reflects the user override layer', () => {
 	assert.equal(I.isFieldOverridden(null, 'model'), false);
 	assert.equal(I.isFieldOverridden({ model: 'x' }, 'model'), true);
 	assert.equal(I.isFieldOverridden({ model: 'x' }, 'effort'), false);
+});
+
+test('model is a dropdown from the agy model catalog; effort defaults to medium', () => {
+	const model = I.FIELDS.find((f) => f.key === 'model');
+	const effort = I.FIELDS.find((f) => f.key === 'effort');
+	assert.equal(model.control, 'select');
+	assert.ok(Array.isArray(model.options) && model.options.length >= 5, 'model options present');
+	assert.ok(model.options.some((o) => (o && o.value ? o.value : o) === 'gemini-3.8-flash'), 'flash base model listed');
+	assert.equal(model.default, 'gemini-3.8-flash');
+	assert.equal(effort.control, 'select');
+	assert.equal(effort.default, 'medium');
+	assert.ok(effort.options.includes('medium'));
 });
 
 test('valuesEqual compares scalars, arrays, and flat objects', () => {

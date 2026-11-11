@@ -10,7 +10,7 @@
 
 - `agy 1.5.4` 起自带 `agy acp` 子命令：常驻 **stdio JSON-RPC 2.0** 服务器，**一行一条 JSON（NDJSON）**。实测 `initialize` → `session/new` → `session/prompt` 全部通过，终态返回 `stopReason: "end_turn"` 与答案文本。
 - 本插件新增 **`transport` 双轨**：`'stream-json'`（默认，行为零变化）/ `'acp'`（opt-in）。ACP 逻辑全部落在新文件 `lib/acp-client.js`，`lib/index.js` 只加一个分支，两条路径返回**同形 run handle**，上层无感。
-- 默认模型改为 `gemini-3.8-flash-medium`（`lib/run.js` 的 `DEFAULT_MODEL`）：stream-json 默认带 `--model`；ACP 先 `session/new` 带 `model`，服务器忽略时再 `session/set_model`；**显式 `model` 始终优先**。
+- 默认模型改为 `gemini-3.8-flash`（`lib/run.js` 的 `DEFAULT_MODEL`），思考强度默认 `medium`（`DEFAULT_EFFORT`）：stream-json 默认带 `--model gemini-3.8-flash --effort medium`；ACP 会拼成 `gemini-3.8-flash-medium` 再 `session/new` / `session/set_model`；**显式 `model` / `effort` 始终优先**。
 - 验证：`node --check` 全通过；`node --test` **87 通过 / 0 失败**（原有 68 + ACP 19）。
 - 部署：新增 `lib/acp-client.js` 后必须在 profile 执行 `pnpm install` 并重启 GUI（硬链接只覆盖已有文件，不覆盖新增文件）。
 - 审核结论：**通过（可合并）**（review §8.7），残余风险见 §6.1。
@@ -86,13 +86,13 @@
 
 ### 2.3 模型
 
-- 默认模型是 **`gemini-3.8-flash-medium`**（`lib/run.js` 的 `DEFAULT_MODEL`，`Config.model` 默认值即它）。**显式配置的 `model` 永远优先**。
+- 默认模型是 **`gemini-3.8-flash`**，默认思考强度 **`medium`**（`lib/run.js` 的 `DEFAULT_MODEL` / `DEFAULT_EFFORT`，也是 `Config.model` / `Config.effort` 的默认值）。**显式配置的 `model` / `effort` 永远优先**。
 - `stream-json`：argv 里**始终**带 `--model <model>`（未配置时用默认 flash）。
 - `acp`：`session/new` 参数里带 `model`；若响应里 `models.currentModelId` 与期望值不一致（或服务器压根没回 `currentModelId`），再补发一次 `session/set_model`。服务器没有模型回读，只能靠日志确认：
   - 走了 `set_model` 时会记 `subagent-antigravity/acp: session/new ignored model "…" (currentModelId=…); applied via session/set_model (server returns no readback)`；
   - `set_model` 失败时记 `failed to apply model "…" via session/set_model: …`。
 - `fallbackModel` 在 ACP 下语义不变：第二轮用 `fallbackModel` 重新 `session/new`（显式值覆盖默认 flash）。
-- `effort` 在 ACP 下**无对应概念**，配置了会被忽略并记 warn（`"effort" is ignored when transport=acp`）。
+- `effort` 在 ACP 下没有原生概念，会**拼接到模型名后缀**（`base-effort`，如 `gemini-3.8-flash-medium`）后再 `session/new` / `session/set_model`。
 
 ### 2.4 超时
 
@@ -322,7 +322,7 @@ Remove-Item $smoke
 
 ```powershell
 # 1) stream-json 路径回归（默认通道，应与改动前一致，只是默认多带 --model）
-& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --project dsh-subagent-agy --model gemini-3.8-flash-medium
+& "$env:USERPROFILE\.gemini\bin\agy.exe" --print "Say OK" --output-format stream-json --project dsh-subagent-agy --model gemini-3.8-flash --effort medium
 
 # 2) ACP 路径：profile 里临时设 transport: acp → 部署 → 重启 GUI → 发一次任意 agy 委派
 #    正常时能看到答案；走了 set_model 会看到：
@@ -357,7 +357,7 @@ pnpm install
 
 | 配置 | ACP 下的实际行为 |
 |---|---|
-| `effort` | **忽略**，warn：`"effort" is ignored when transport=acp`（ACP 没有 effort 概念）。 |
+| `effort` | **映射**：拼成模型名后缀（`base-effort`），如 `gemini-3.8-flash-medium`（ACP 无独立 effort 参数）。 |
 | `printTimeout` | **忽略**，warn 并提示改用 `acpPromptTimeoutMs`。 |
 | `jsonSchema` | **忽略**，warn（ACP 只有自由文本 content blocks，没有结构化输出约束）。 |
 | `addDirs` | 映射到 `session/new.additionalDirectories`（字段名 best-effort），warn 说明映射关系。 |
@@ -396,7 +396,7 @@ pnpm install
 | `docs/agy-acp-transport-review.md` | **新增** | 代码审核记录（首轮缺陷清单 + Round 2 复核，§0 / §8 为准）。 |
 | `docs/agy-acp-transport.md` | **新增** | 本文（最终交付文档）。 |
 | `lib/index.js` | 修改 | `Config` 新增 `transport` / `acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTimeoutMs` / `acpPermissionPolicy` / `acpFallbackToStreamJson` / `acpExtraArgs`；`apply()` 的 `resolved` 补默认值；`start()` 增加 `transport === 'acp'` 分支与 ACP 忽略字段的 warn。默认 `stream-json` 的 spec 构造逐字段不变。 |
-| `lib/run.js` | 修改 | 新增并导出 `DEFAULT_MODEL = 'gemini-3.8-flash-medium'`；`antigravityArgv()` 始终输出 `--model`（显式值优先）；顺带修复 `startAntigravityRunWithRetry` 的**预存缺陷**：不再调用 `SubagentRun` 上不存在的 `.teardown()` / `.requestCancel()`，改用 `dispose()`，并保证包装层 `result` 永不 reject。 |
+| `lib/run.js` | 修改 | 新增并导出 `DEFAULT_MODEL = 'gemini-3.8-flash'` 与 `DEFAULT_EFFORT = 'medium'`；`antigravityArgv()` 始终输出 `--model` 与 `--effort`（显式值优先）；顺带修复 `startAntigravityRunWithRetry` 的**预存缺陷**：不再调用 `SubagentRun` 上不存在的 `.teardown()` / `.requestCancel()`，改用 `dispose()`，并保证包装层 `result` 永不 reject。 |
 | `lib/types/index.d.ts` | 修改 | 手工同步 `AntigravityTransport` / `AcpPermissionPolicy` 两个类型与 7 个 `Config` 字段（含 `model` 默认值注释）。 |
 | `README.md` | 修改 | 新增「传输方式（transport）」说明并链接本文；同步默认模型、测试用例数与文件清单。 |
 | `package.json` | **未改** | `files` 已含 `lib/*.js`，新文件 `lib/acp-client.js` 自动被收录，无需改白名单；未新增任何第三方依赖。 |

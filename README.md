@@ -145,6 +145,19 @@ ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTime
 - ACP 下 `effort` / `printTimeout` / `jsonSchema` **不生效**（会记 warn），`addDirs` 改走 `session/new.additionalDirectories`；握手失败默认自动回退 stream-json（`acpFallbackToStreamJson`）。
 - 新增的 `lib/acp-client.js` 需要按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 才会同步，然后重启 GUI。
 
+### 3.6 图形化设置（Settings）
+
+打开 DSH Web GUI 的「设置（Settings）」→ 左侧「**Antigravity**」，即可在界面里编辑全部 35 个配置字段，无需手改 profile YAML：
+
+- 分 **5 组**：**基础** / **传输与 ACP** / **Gemini 网页** / **团队与并发** / **高级**。
+- **即时生效**：改动即时写入 profile 配置并热重载；未修改的字段不会写盘，避免无谓重载。
+- **安全**：缺设置服务的部署不受影响（Gemini 面板照常）；空值/非法值不落盘、不写 `NaN`、`env` 非法行不写盘；`teamProviderName` 必须 ≠ `providerName`；**修改 Gemini 运行参数会重启 worker，可能中断进行中的任务**。
+- **不回归**：两个 Gemini 面板与 `subagent_agy` / `subagent_agy_team` / `subagent_agy_parallel` 工具行为不变。
+
+字段总表（名称/控件/默认/分组/生效说明）、实现架构、验证与手工验收步骤、风险回退，详见 **[docs/settings-ui.md](docs/settings-ui.md)**。
+
+> 该功能依赖 `dsh.client.inject` 中的 `@deepseek-ai/dsh-client-ui-settings`；新增文件需按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 后重启 GUI 生效。
+
 ---
 
 ## 4. 配置字段
@@ -323,6 +336,9 @@ dsh-subagent-agy/
 │   ├── agy-acp-transport.md           # ACP 传输通道交付文档（用法/架构/验证/风险）
 │   ├── agy-acp-transport-design.md    # ACP 接入方案设计
 │   ├── agy-acp-transport-review.md    # ACP 实现代码审核记录
+│   ├── settings-ui.md                 # 设置页 UI 交付文档（字段总表/架构/验证/风险）
+│   ├── settings-ui-design.md          # 设置页 UI 集成方案设计
+│   ├── settings-ui-review.md          # 设置页 UI 代码审核记录
 │   └── headless-scripting-plan.md     # headless 能力调研记录
 ├── lib/
 │   ├── index.js               # Cordis 插件入口：Config、Provider、apply
@@ -330,7 +346,7 @@ dsh-subagent-agy/
 │   ├── acp-client.js          # ACP 传输：agy acp / JSON-RPC / 权限应答 / 重试
 │   ├── wire.js                # NDJSON 流解析
 │   ├── classify.js            # 失败分类与 retry-after 解析
-│   ├── client.js              # 两个侧边栏面板（Gemini 调研 / Gemini 对话）
+│   ├── client.js              # 两个侧边栏面板（Gemini 调研 / Gemini 对话）+ 设置页
 │   ├── gemini-web.js          # /api/dsh-gemini-research/* 桥接、双队列、登录态
 │   ├── gemini-models.js       # 静态模型目录、目录归一化、模型/思考校验与匹配
 │   ├── worker-client.js       # 常驻 worker 客户端（懒启动/重启/空闲回收）
@@ -355,6 +371,7 @@ dsh-subagent-agy/
     ├── gemini-models.test.js  # 模型目录归一化、校验与 token 匹配
     ├── gemini-web.test.js     # 双队列、路由、登录态、任务摘要
     ├── parallel.test.js       # 批量并发任务规范化与渲染
+    ├── settings-ui.test.js    # 设置页字段表/分组/解析/序列化/apply 接线
     ├── test_selectors.py      # Python 完成判定纯函数
     ├── worker-client.test.js  # worker 协议、崩溃重启、超时、空闲回收
     └── wire.test.js           # NDJSON 协议解析
@@ -406,7 +423,7 @@ npm test
 node --test --test-isolation=none
 ```
 
-当前共 **87 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js` / `acp-client.js`；另有 Python 完成判定与模型匹配用例：
+当前共 **99 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js` / `acp-client.js` / `settings-ui.test.js`（设置页字段表/解析/序列化/接线）；另有 Python 完成判定与模型匹配用例：
 
 ```powershell
 python -m unittest test/test_selectors.py

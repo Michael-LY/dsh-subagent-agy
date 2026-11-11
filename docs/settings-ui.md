@@ -156,6 +156,7 @@ DSH 设置 UI
    - `exports.inject` 仍为 **`['slots']`**——**绝不**把 `configForms` 放进必需依赖，否则缺 settings 服务的部署会连 Gemini 面板一起失效。
    - `configForms` 走 `ctx.inject(['configForms'], cb)`；服务缺失时回调不执行，`mount()` 内再判 `child.slots && child.configForms` 才继续，缺失直接 `return`，不抛错。
    - `package.json > dsh.client.inject` 追加 `"@deepseek-ai/dsh-client-ui-settings"`（只保证该 bundle 先于本插件装载，并非强制服务存在）。
+4. **Config 必须是 volatile（关键前提）**：DSH 设置表单只暴露 volatile 字段。因此 `lib/index.js` 的 `Config = z.object({...}).volatile()`，`apply()` 入口用 `readConfig()` 解包 `.get()`。核心委派字段（model / transport / acp* / effort / printTimeout / jsonSchema / env / addDirs / fallbackModel / retryOnRateLimit）在每次 `provider.start()` 读取 live 值，**即时生效**；结构性字段（providerName / teamProviderName / teamEnabled / parallelToolName / parallelMaxTasks 及 Gemini 网页参数）在 apply 时注册，**需重启 DSH 生效**。
 
 ### 4.3 读写语义（含「未变化不写盘」）
 

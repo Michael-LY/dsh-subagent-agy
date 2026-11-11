@@ -122,6 +122,29 @@ pnpm install
 3. 登录成功后 `init_login.py` 写入 `login-ok.json` 并退出；面板状态变为「登录态已验证」。
 4. `login-ok.json` 只表示历史登录文件存在；真正的登录验证以 `login-state.json` 的 `signedIn` / `checkedAt` 为准。
 
+### 3.5 传输方式（transport）
+
+`agy` 有两套可用的无头通道，由 `transport` 字段切换：
+
+| `transport` | 通道 | 说明 |
+|---|---|---|
+| `stream-json`（默认） | `agy --print … --output-format stream-json` | 一次性进程、单向 NDJSON 事件流；现有行为，零改动。 |
+| `acp` | `agy acp` | 常驻 stdio JSON-RPC 2.0 服务器（NDJSON），有 `initialize` / `session/new` / `session/prompt`、会话内流式更新，以及权限反向请求 `session/request_permission`。 |
+
+默认仍是 `stream-json`，不配置即老行为。要启用 ACP，在 profile 的 `cordis.patch.yml` 里给 `- id: subagent-antigravity` 加 `transport: acp`：
+
+```yaml
+- insert:
+    - id: subagent-antigravity
+      config:
+        transport: acp
+```
+
+ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTimeoutMs` / `acpPermissionPolicy` / `acpFallbackToStreamJson` / `acpExtraArgs`）的默认值与行为、与 stream-json 的差异对照、验证与回退方式，见 **[docs/agy-acp-transport.md](docs/agy-acp-transport.md)**。两条要点先记住：
+
+- ACP 下 `effort` / `printTimeout` / `jsonSchema` **不生效**（会记 warn），`addDirs` 改走 `session/new.additionalDirectories`；握手失败默认自动回退 stream-json（`acpFallbackToStreamJson`）。
+- 新增的 `lib/acp-client.js` 需要按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 才会同步，然后重启 GUI。
+
 ---
 
 ## 4. 配置字段
@@ -169,7 +192,7 @@ pnpm install
 |---|---|---|---|
 | `providerName` | `string` (`min(1)`) | `antigravity` | 注册到 `ctx.subagents` 的 provider 名，须与工具绑定名一致。 |
 | `executable` | `string` (`min(1)`) | `%USERPROFILE%/.gemini/bin/agy.exe` | `agy` 可执行文件绝对路径。 |
-| `model` | `string` (`min(1)`) | 无（继承 CLI） | 模型名，如 `gemini-4-argon-high`、`gemini-3.8-flash-high`、`claude-opus-5-5-high`。 |
+| `model` | `string` (`min(1)`) | `gemini-3.8-flash-medium` | 模型名，如 `gemini-3.8-flash-medium`、`gemini-4-argon-high`、`claude-opus-5-5-high`；显式值始终优先。 |
 | `effort` | `low \| medium \| high \| xhigh \| max` | 无 | 推理档位，映射 `--effort`。 |
 | `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理后的环境之上。 |
 | `permissionMode` | `dangerously-skip-permissions \| auto` | `dangerously-skip-permissions` | 权限模式。print 模式下工具确认会被软拒，默认跳过权限；`auto` 仅适合纯问答。 |
@@ -297,10 +320,14 @@ dsh-subagent-agy/
 ├── package.json               # ESM 声明、peerDependencies、files 白名单
 ├── icon.svg                   # 插件图标
 ├── docs/
-│   └── headless-scripting-plan.md  # headless 能力调研记录
+│   ├── agy-acp-transport.md           # ACP 传输通道交付文档（用法/架构/验证/风险）
+│   ├── agy-acp-transport-design.md    # ACP 接入方案设计
+│   ├── agy-acp-transport-review.md    # ACP 实现代码审核记录
+│   └── headless-scripting-plan.md     # headless 能力调研记录
 ├── lib/
 │   ├── index.js               # Cordis 插件入口：Config、Provider、apply
-│   ├── run.js                 # agy 进程生命周期与可选重试
+│   ├── run.js                 # agy 进程生命周期与可选重试（stream-json）
+│   ├── acp-client.js          # ACP 传输：agy acp / JSON-RPC / 权限应答 / 重试
 │   ├── wire.js                # NDJSON 流解析
 │   ├── classify.js            # 失败分类与 retry-after 解析
 │   ├── client.js              # 两个侧边栏面板（Gemini 调研 / Gemini 对话）
@@ -323,6 +350,7 @@ dsh-subagent-agy/
 │       ├── selectors.py       # 共享选择器、登录检测、可见性、调试截图
 │       └── run_research.py    # 旧单次 Deep Research 脚本（oneshot 回退）
 └── test/
+    ├── acp-client.test.js     # ACP 分帧、握手、权限、stopReason、重试
     ├── classify.test.js       # 失败分类与延时解析
     ├── gemini-models.test.js  # 模型目录归一化、校验与 token 匹配
     ├── gemini-web.test.js     # 双队列、路由、登录态、任务摘要
@@ -378,7 +406,7 @@ npm test
 node --test --test-isolation=none
 ```
 
-当前共 **68 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js`；另有 Python 完成判定与模型匹配用例：
+当前共 **87 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js` / `acp-client.js`；另有 Python 完成判定与模型匹配用例：
 
 ```powershell
 python -m unittest test/test_selectors.py
@@ -389,7 +417,7 @@ python -m unittest test/test_selectors.py
 ### 7.2 语法检查
 
 ```powershell
-node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js
+node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js; node --check lib/acp-client.js
 python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py scripts/gemini_research/worker.py scripts/gemini_research/chat_page.py scripts/gemini_research/research_page.py scripts/gemini_research/selectors.py
 ```
 

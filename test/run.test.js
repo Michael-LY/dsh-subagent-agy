@@ -36,6 +36,32 @@ function argv(overrides = {}) {
 	return antigravityArgv({ ...BASE, ...overrides });
 }
 
+test('antigravityArgv: 带 effort 后缀的完整 model id 不传 --effort', () => {
+	// agy: `--model gpt-oss-120b-medium conflicts with --effort=high`
+	const args = argv({ model: 'gpt-oss-120b-medium', effort: 'high' });
+	assert.equal(args.includes('--effort'), false);
+	assert.equal(args[args.indexOf('--model') + 1], 'gpt-oss-120b-medium');
+	assert.equal(argv({ model: 'gemini-3.8-flash-high', effort: 'high' }).includes('--effort'), false);
+});
+
+test('antigravityArgv: claude 系 model 不传 --effort', () => {
+	// agy: `--effort is not supported for model "claude-sonnet-4-6"`
+	for (const model of ['claude-sonnet-4-6', 'claude-opus-4-6-thinking']) {
+		const args = argv({ model, effort: 'high' });
+		assert.equal(args.includes('--effort'), false, `${model} 不应带 --effort`);
+		assert.equal(args[args.indexOf('--model') + 1], model);
+	}
+});
+
+test('antigravityArgv: 基础 model id 仍然传 --effort', () => {
+	// CLI 只认组合 id，基础名必须靠 --effort 补成 gemini-3.8-flash-high。
+	const args = argv({ model: 'gemini-3.8-flash', effort: 'high' });
+	const index = args.indexOf('--effort');
+	assert.notEqual(index, -1);
+	assert.equal(args[index + 1], 'high');
+	assert.equal(argv({ effort: 'medium' })[argv({ effort: 'medium' }).indexOf('--effort') + 1], 'medium');
+});
+
 test('antigravityArgv: 默认不添加 --new-project / --project', () => {
 	const args = argv();
 	assert.equal(args.includes('--new-project'), false);

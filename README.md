@@ -1,66 +1,68 @@
 # dsh-subagent-agy
 
-DSH（DeepSeek Harness）插件：把一次性任务委派给本机 **Antigravity CLI（`agy`）**，并在侧边栏提供 **Gemini 网页 Deep Research** 与 **Gemini 网页对话**两个独立面板。
+**English** | [中文](README_CN.md)
 
-- npm 包名：`dsh-subagent-agy`
-- 当前版本：`0.6.2`
-- 仓库：<https://github.com/Michael-LY/dsh-subagent-agy>
+DSH (DeepSeek Harness) plugin: delegate one-shot tasks to the local **Antigravity CLI (`agy`)**, and provide two independent sidebar panels for **Gemini Web Deep Research** and **Gemini Web Chat**.
 
----
-
-## 目录
-
-- [1. 项目简介](#1-项目简介)
-- [2. 安装与部署](#2-安装与部署)
-- [3. 使用说明](#3-使用说明)
-- [4. 配置字段](#4-配置字段)
-- [5. 架构说明](#5-架构说明)
-- [6. 目录结构与模块分工](#6-目录结构与模块分工)
-- [7. 验证与测试](#7-验证与测试)
-- [8. 已知限制与注意事项](#8-已知限制与注意事项)
+- npm package: `dsh-subagent-agy`
+- Current version: `0.6.2`
+- Repository: <https://github.com/Michael-LY/dsh-subagent-agy>
 
 ---
 
-## 1. 项目简介
+## Table of Contents
 
-### 1.1 定位
-
-Antigravity（`agy`）是 Google 提供的 Agent CLI，没有对外开放 app-server 或客户端 SDK，只提供命令行交互与无头脚本模式。本插件在 DSH 中提供三类能力：
-
-1. **一次性子智能体委派**：注册 `antigravity` provider，向模型暴露 `subagent_agy`。每次任务在宿主会话的工作区里 spawn 一个独立的 `agy --print --output-format stream-json` 子进程，执行完即退出。
-2. **并发/团队子智能体**：
-   - `subagent_agy_team`：绑定 `antigravity-team` provider，在 prompt 前注入团队指令，让 agy 主模型用原生 `invoke_subagent` 在同一轮并发拆分子任务。
-   - `subagent_agy_parallel`：DSH 侧批量工具，一次调用并发启动多个独立 agy 子进程，立即返回 id，结果异步回传。
-3. **Gemini 网页端**：
-   - 「Gemini 调研」面板：用 Google AI Pro 网页端 Deep Research 做多步调研。
-   - 「Gemini 对话」面板：直接和 Gemini 网页端多轮对话。
-   - 两个面板各有一条独立任务队列，共享同一个常驻浏览器 worker，互不排队、可以同时工作。
-
-### 1.2 触发词
-
-模型侧通过 `subagent_agy` 工具使用本插件。触发词为 `agy` 与 `antigravity`（不区分大小写），由三处联动保证：
-
-1. `locale/zh.json` / `locale/en.json` 的 description；
-2. `cordis.patch.yml` 的 `provider` / `toolName`；
-3. `%USERPROFILE%\.dsh\AGENTS.md` 中的模型指令。
+- [1. Overview](#1-overview)
+- [2. Installation & Deployment](#2-installation--deployment)
+- [3. Usage](#3-usage)
+- [4. Configuration](#4-configuration)
+- [5. Architecture](#5-architecture)
+- [6. Directory Structure & Modules](#6-directory-structure--modules)
+- [7. Verification & Testing](#7-verification--testing)
+- [8. Known Limitations & Notes](#8-known-limitations--notes)
 
 ---
 
-## 2. 安装与部署
+## 1. Overview
 
-### 2.1 从 npm 安装
+### 1.1 Positioning
+
+Antigravity (`agy`) is Google's Agent CLI. It does not expose a public app-server or client SDK, offering only interactive CLI and headless scripting modes. This plugin provides three capabilities in DSH:
+
+1. **One-shot Subagent Delegation**: Registers the `antigravity` provider and exposes `subagent_agy` to the model. Each task spawns an isolated `agy` child process in the host session's workspace and exits upon completion.
+2. **Concurrent / Team Subagents**:
+   - `subagent_agy_team`: Bound to the `antigravity-team` provider; prepends a team directive to the prompt so the main `agy` model uses its native `invoke_subagent` to split and run subtasks concurrently in a single turn.
+   - `subagent_agy_parallel`: A DSH-side batch tool that launches multiple independent `agy` subagents concurrently in one call, returns IDs immediately, and delivers results asynchronously.
+3. **Gemini Web Integration**:
+   - **Gemini Research** panel: Runs multi-step Deep Research via the Google AI Pro web interface.
+   - **Gemini Chat** panel: Multi-turn chat directly with Gemini Web.
+   - Both panels have their own independent task queues while sharing a single persistent browser worker, so they do not block each other and can run concurrently.
+
+### 1.2 Trigger Keywords
+
+The model invokes this plugin via the `subagent_agy` tool. Trigger keywords are `agy` and `antigravity` (case-insensitive), coordinated across three places:
+
+1. Descriptions in `locale/zh.json` and `locale/en.json`;
+2. `provider` / `toolName` bindings in `cordis.patch.yml`;
+3. Model instructions in `%USERPROFILE%\.dsh\AGENTS.md`.
+
+---
+
+## 2. Installation & Deployment
+
+### 2.1 Install from npm
 
 ```powershell
 npm install dsh-subagent-agy
-# 或交给 DSH 装进指定 profile：
+# Or install into a specific DSH profile:
 dsh plugin --profile desktop add dsh-subagent-agy
 ```
 
-安装后重启 DSH GUI，模型可见工具 `subagent_agy`、`subagent_agy_team`、`subagent_agy_parallel`，侧边栏出现「Gemini 调研」「Gemini 对话」两个入口。
+After installation, restart the DSH GUI. The model will have access to `subagent_agy`, `subagent_agy_team`, and `subagent_agy_parallel`, and the sidebar will show the **Gemini Research** and **Gemini Chat** entries.
 
-### 2.2 本地开发与 Profile 配置
+### 2.2 Local Development & Profile Setup
 
-本插件也作为本地依赖接入本机 DSH 桌面端 Profile（`%USERPROFILE%\.dsh\profiles\desktop`）。在 Profile 的 `package.json` 中：
+This plugin can also be linked as a local dependency in the local DSH Desktop profile (`%USERPROFILE%\.dsh\profiles\desktop`). In the profile's `package.json`:
 
 ```json
 {
@@ -70,68 +72,68 @@ dsh plugin --profile desktop add dsh-subagent-agy
 }
 ```
 
-并把 `"dsh-subagent-agy"` 加入 `dsh.profile.bundles`。
+And add `"dsh-subagent-agy"` to `dsh.profile.bundles`.
 
-### 2.3 硬链接机制与同步注意
+### 2.3 Hardlinks & Sync Notes
 
-- Profile 安装后，`node_modules/dsh-subagent-agy/*` 以**硬链接（Hardlink）**方式指向本仓库对应文件。
-- 原地修改现有文件会通过硬链接实时生效；**新增文件不会自动同步**；编辑器整体替换文件（原子写）可能切断硬链接。
-- 新增文件或需要重建硬链接时：
+- After profile installation, `node_modules/dsh-subagent-agy/*` points to the corresponding files in this repository via **hardlinks**.
+- In-place edits to existing files take effect immediately through hardlinks; **newly added files are not synced automatically**, and atomic-write replacements by an editor may break hardlinks.
+- When adding new files or rebuilding hardlinks:
 
 ```powershell
 cd "$env:USERPROFILE\.dsh\profiles\desktop"
 pnpm install
 ```
 
-> DSH 内置沙箱可能限制 pnpm 写全局 store，建议在真实独立终端执行。完成后重启 DSH GUI。
+> The built-in DSH sandbox may block `pnpm` from writing to the global store; run this in a real standalone terminal, then restart the DSH GUI.
 
-### 2.4 环境要求
+### 2.4 Requirements
 
-- Node.js `>=22.19.0`，DSH `>=0.2.2-rc.3 <0.3.0-0`。
-- `agy` CLI 已安装并完成本机登录（默认路径 `%USERPROFILE%\.gemini\bin\agy.exe`）。
-- Gemini 网页功能需要本机 `python` 与 `playwright`（`pip install playwright`）；使用系统默认浏览器 Chrome/Edge，不需要 `playwright install`。
+- Node.js `>=22.19.0`, DSH `>=0.2.2-rc.3 <0.3.0-0`.
+- `agy` CLI installed and authenticated locally (default path: `%USERPROFILE%\.gemini\bin\agy.exe`).
+- Gemini Web features require local `python` and `playwright` (`pip install playwright`); uses the system default browser (Chrome/Edge), so `playwright install` is not required.
 
 ---
 
-## 3. 使用说明
+## 3. Usage
 
-### 3.1 子智能体
+### 3.1 Subagents
 
-- `subagent_agy`：单次任务委派。任务 prompt 必须自包含，子进程不继承父会话上下文。
-- `subagent_agy_team`：适合「一个大任务，让 agy 自己拆」；由 agy 用原生 `invoke_subagent` 并发执行。
-- `subagent_agy_parallel`：适合「已经知道要拆成哪几个独立任务」；参数 `tasks: [{description, prompt, cwd?}]`，默认最多 8 个。
+- `subagent_agy`: Single-task delegation. The prompt must be self-contained, as the child process does not inherit parent session context.
+- `subagent_agy_team`: Best when you have one large task and want `agy` to decompose it itself using native `invoke_subagent` concurrently.
+- `subagent_agy_parallel`: Best when you already know the independent subtasks to split into; accepts `tasks: [{description, prompt, cwd?}]`, up to 8 tasks by default.
 
-### 3.2 「Gemini 调研」面板
+### 3.2 Gemini Research Panel
 
-- 顶部显示运行状态、登录进程、登录态、Profile 状态。
-- 输入调研主题 →「开始 Deep Research」，单次通常 5–10 分钟。
-- 完成后展示报告，可复制；失败时展示错误与运行日志。
-- 同一时间只跑一个调研任务；与「Gemini 对话」分属不同队列，可并行。
+- Top status bar shows running state, login process, login state, and profile status.
+- Enter a research topic → click **Start Deep Research** (typically takes 5–10 minutes per run).
+- Displays the final report with copy support on completion; shows errors and logs on failure.
+- Runs one research task at a time; uses a separate queue from Gemini Chat so both can run concurrently.
 
-### 3.3 「Gemini 对话」面板
+### 3.3 Gemini Chat Panel
 
-- 消息列表 + 输入框：Enter 发送，Shift+Enter 换行。
-- 多轮上下文保留在同一个浏览器 page 内；「新对话」清空上下文。
-- 未登录也可进行普通对话（但无历史记录）；Deep Research 必须登录。
-- 与 Deep Research 共享同一个浏览器 profile，但各占一个标签页、各自一条队列。
+- Message list + input box: `Enter` to send, `Shift+Enter` for newline.
+- Multi-turn context is preserved within the same browser page; **New Chat** resets the context.
+- Regular chat works without signing in (without history); Deep Research requires login.
+- Shares the same browser profile with Deep Research, but uses its own tab and queue.
 
-### 3.4 登录
+### 3.4 Login
 
-1. 在任一 Gemini 面板点「初始化登录」。
-2. 弹出系统默认浏览器（Chrome/Edge），登录 Google AI Pro 账号。
-3. 登录成功后 `init_login.py` 写入 `login-ok.json` 并退出；面板状态变为「登录态已验证」。
-4. `login-ok.json` 只表示历史登录文件存在；真正的登录验证以 `login-state.json` 的 `signedIn` / `checkedAt` 为准。
+1. Click **Initialize Login** in either Gemini panel.
+2. Your system default browser (Chrome/Edge) opens; sign in to your Google AI Pro account.
+3. Once signed in, `init_login.py` writes `login-ok.json` and exits; the panel status updates to verified.
+4. `login-ok.json` only indicates a historical login file exists; actual runtime verification relies on `signedIn` / `checkedAt` in `login-state.json`.
 
-### 3.5 传输方式（transport）
+### 3.5 Transport Modes (`transport`)
 
-`agy` 有两套可用的无头通道，由 `transport` 字段切换：
+`agy` supports two headless channels, switched via the `transport` config field:
 
-| `transport` | 通道 | 说明 |
+| `transport` | Channel | Description |
 |---|---|---|
-| `acp`（默认） | `agy acp` | 常驻 stdio JSON-RPC 2.0 服务器（NDJSON），有 `initialize` / `session/new` / `session/prompt`、会话内流式更新，以及权限反向请求 `session/request_permission`。 |
-| `stream-json` | `agy --print … --output-format stream-json` | 一次性进程、单向 NDJSON 事件流；旧通道，仍可用。 |
+| `acp` (default) | `agy acp` | Persistent stdio JSON-RPC 2.0 server (NDJSON) with `initialize` / `session/new` / `session/prompt`, in-session streaming updates, and reverse permission requests (`session/request_permission`). |
+| `stream-json` | `agy --print … --output-format stream-json` | One-shot process with unidirectional NDJSON event stream; legacy channel, still supported. |
 
-默认使用 `acp`；握手/建会话失败会自动回退 `stream-json` 一次（`acpFallbackToStreamJson: true`）。如需强制走旧通道，在 profile 的 `cordis.patch.yml` 里给 `- id: subagent-antigravity` 设 `transport: stream-json`：
+`acp` is used by default; if handshake or session creation fails, it automatically falls back once to `stream-json` (`acpFallbackToStreamJson: true`). To force the legacy channel, set `transport: stream-json` under `- id: subagent-antigravity` in the profile's `cordis.patch.yml`:
 
 ```yaml
 - insert:
@@ -140,29 +142,29 @@ pnpm install
         transport: stream-json
 ```
 
-ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTimeoutMs` / `acpPermissionPolicy` / `acpFallbackToStreamJson` / `acpExtraArgs`）的默认值与行为、与 stream-json 的差异对照、验证与回退方式，见 **[docs/agy-acp-transport.md](docs/agy-acp-transport.md)**。两条要点先记住：
+For ACP-specific fields (`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTimeoutMs` / `acpPermissionPolicy` / `acpFallbackToStreamJson` / `acpExtraArgs`), differences vs. `stream-json`, verification, and rollback instructions, see **[docs/agy-acp-transport.md](docs/agy-acp-transport.md)**. Two key notes:
 
-- ACP 下 `printTimeout` / `jsonSchema` **不生效**（会记 warn），`effort` 会拼成模型名后缀，`addDirs` 改走 `session/new.additionalDirectories`；握手失败默认自动回退 stream-json（`acpFallbackToStreamJson`）。
-- 新增的 `lib/acp-client.js` 需要按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 才会同步，然后重启 GUI。
+- Under ACP, `printTimeout` and `jsonSchema` **do not take effect** (a warning is logged), `effort` is appended as a model name suffix, and `addDirs` uses `session/new.additionalDirectories`; handshake failures fall back to `stream-json` by default (`acpFallbackToStreamJson`).
+- The added `lib/acp-client.js` requires running `pnpm install` once in the profile per [2.3](#23-hardlinks--sync-notes), followed by a GUI restart.
 
-### 3.6 图形化设置（Settings）
+### 3.6 Graphical Settings UI
 
-打开 DSH Web GUI 的「设置（Settings）」→ 左侧「**Antigravity**」，即可在界面里编辑全部 35 个配置字段，无需手改 profile YAML：
+Open DSH Web GUI **Settings** → **Antigravity** on the left sidebar to edit all 35 configuration fields in the UI without manually editing profile YAML:
 
-- 分 **5 组**：**基础** / **传输与 ACP** / **Gemini 网页** / **团队与并发** / **高级**。
-- **即时生效**：改动即时写入 profile 配置并热重载；未修改的字段不会写盘，避免无谓重载。
-- **安全**：缺设置服务的部署不受影响（Gemini 面板照常）；空值/非法值不落盘、不写 `NaN`、`env` 非法行不写盘；`teamProviderName` 必须 ≠ `providerName`；**修改 Gemini 运行参数会重启 worker，可能中断进行中的任务**。
-- **不回归**：两个 Gemini 面板与 `subagent_agy` / `subagent_agy_team` / `subagent_agy_parallel` 工具行为不变。
+- Organized into **5 groups**: **Basic** / **Transport & ACP** / **Gemini Web** / **Team & Parallel** / **Advanced**.
+- **Immediate effect**: Changes are written to the profile config and hot-reloaded immediately; unmodified fields are not written to disk.
+- **Safety**: Deployments without the settings service remain unaffected (Gemini panels work normally); empty/invalid values, `NaN`, and invalid `env` lines are not persisted; `teamProviderName` must differ from `providerName`; **changing Gemini runtime settings restarts the worker and may interrupt active tasks**.
+- **No regressions**: Both Gemini panels and `subagent_agy` / `subagent_agy_team` / `subagent_agy_parallel` continue working unchanged.
 
-字段总表（名称/控件/默认/分组/生效说明）、实现架构、验证与手工验收步骤、风险回退，详见 **[docs/settings-ui.md](docs/settings-ui.md)**。
+For the full field reference, architecture, verification steps, and rollback notes, see **[docs/settings-ui.md](docs/settings-ui.md)**.
 
-> 该功能依赖 `dsh.client.inject` 中的 `@deepseek-ai/dsh-client-ui-settings`；新增文件需按 [2.3](#23-硬链接机制与同步注意) 在 profile 执行一次 `pnpm install` 后重启 GUI 生效。
+> Requires `@deepseek-ai/dsh-client-ui-settings` in `dsh.client.inject`; new files require running `pnpm install` in the profile per [2.3](#23-hardlinks--sync-notes) and restarting the GUI.
 
 ---
 
-## 4. 配置字段
+## 4. Configuration
 
-### 4.1 配置示例
+### 4.1 Example Configuration
 
 ```yaml
 - insert:
@@ -177,7 +179,7 @@ ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTime
         newProject: false
         projectName: ''
         printTimeout: 180s
-        # jsonSchema: '{"type": "object"}'   # 可选，内联 JSON 或文件路径；不要传空字符串
+        # jsonSchema: '{"type": "object"}'   # Optional: inline JSON or file path; do not pass an empty string
         addDirs: []
         fallbackModel: gemini-3.8-flash-high
         retryOnRateLimit: false
@@ -199,274 +201,273 @@ ACP 专属字段（`acpProtocolVersion` / `acpRequestTimeoutMs` / `acpPromptTime
         env: {}
 ```
 
-### 4.2 字段说明
+### 4.2 Field Reference
 
-| 字段 | 类型 / 校验 | 默认值 | 说明 |
+| Field | Type / Validation | Default | Description |
 |---|---|---|---|
-| `providerName` | `string` (`min(1)`) | `antigravity` | 注册到 `ctx.subagents` 的 provider 名，须与工具绑定名一致。 |
-| `executable` | `string` (`min(1)`) | `%USERPROFILE%/.gemini/bin/agy.exe` | `agy` 可执行文件绝对路径。 |
-| `model` | `string` (`min(1)`) | `gemini-3.8-flash` | 基础模型名，取自 `agy models`（如 `gemini-3.8-flash`、`gemini-4-argon`、`claude-opus-5-5`、`gpt-oss-120b`）；思考强度由 `effort` 单独指定，显式值始终优先。 |
-| `effort` | `low \| medium \| high \| xhigh \| max` | `medium` | 推理档位，映射 `--effort`；ACP 下会拼到模型名后缀（如 `gemini-3.8-flash-medium`）。 |
-| `env` | `Record<string, string>` | `{}` | 注入子进程的环境变量，覆盖在内置清理后的环境之上。 |
-| `permissionMode` | `dangerously-skip-permissions \| auto` | `dangerously-skip-permissions` | 权限模式。print 模式下工具确认会被软拒，默认跳过权限；`auto` 仅适合纯问答。 |
-| `extraArgs` | `string[]` | `[]` | 直接追加到 `agy` 命令行。 |
-| `newProject` | `boolean` | `false` | 是否附加 `--new-project`。默认关闭，避免 Desktop Projects 列表堆积同名项目。 |
-| `projectName` | `string` | `''` | 非空时映射 `--project <name>`，固定复用同一项目；优先于 `newProject`。 |
-| `printTimeout` | `string` (`min(1)`) | 无（无限等待） | `--print-timeout`，Go duration 格式（如 `180s`、`10m`）。到期会返回部分结果并以 exit 0 退出，不能据此判断任务完成。 |
-| `jsonSchema` | `string` (`min(1)`) | 无 | `--json-schema`，内联 JSON 或文件路径。 |
-| `addDirs` | `string[]` | 无 | 附加只读工作区目录，每个映射一个 `--add-dir`。 |
-| `fallbackModel` | `string` (`min(1)`) | 无（不重试） | 配额耗尽/限流时的降级备用模型，最多重试一次。 |
-| `retryOnRateLimit` | `boolean` | `false` | 429 限流时按提示时长退避重试一次（上限 15s）。 |
-| `disposeGraceMs` | `number` | `3000` | 终止清理子进程的宽限时长（毫秒）。 |
-| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/browser-profile` | Gemini 持久化浏览器 profile 目录。目录名是 `browser-profile`，因为浏览器可能是 Edge 或 Chrome。 |
-| `geminiPython` | `string` (`min(1)`) | `python` | Playwright 脚本使用的 Python 可执行文件。 |
-| `geminiHeadless` | `boolean` | `true` | Deep Research 是否无头运行；初始化登录始终有头。 |
-| `geminiTimeoutMs` | `number` | `900000` | 单次 Deep Research 硬超时（毫秒）。 |
-| `geminiChatTimeoutMs` | `number` (`min(1000)`) | `180000` | 单条普通对话消息硬超时（毫秒）。 |
-| `geminiWorkerIdleMs` | `number` (`min(0)`) | `600000` | 常驻 worker 空闲回收时长（毫秒）；`0` 表示不自动回收。 |
-| `geminiWorkerMode` | `persistent \| oneshot` | `persistent` | `persistent` 走常驻 worker；`oneshot` 时 Deep Research 回退旧 `run_research.py` 单次脚本（普通对话仍走 worker，且不支持模型/思考档选择）。 |
-| `geminiDefaultModel` | `string` | `''` | 面板未保存本地选择时使用的默认模型 id（`flash-lite` / `flash` / `pro` / `argon`）；空值跟随网页默认。 |
-| `geminiDefaultThinking` | `string` | `''` | 面板未保存本地选择时使用的默认思考档（`low` / `medium` / `high`）；空值跟随网页默认。 |
-| `teamProviderName` | `string` (`min(1)`) | `antigravity-team` | 团队 provider 名，必须与 `providerName` 不同。 |
-| `teamEnabled` | `boolean` | `true` | 是否注册 `antigravity-team` provider。 |
-| `parallelToolName` | `string` (`min(1)`) | `subagent_agy_parallel` | 批量并发工具名。 |
-| `parallelMaxTasks` | `number` (1–8) | `8` | 批量工具一次最多启动的任务数。 |
+| `providerName` | `string` (`min(1)`) | `antigravity` | Provider name registered on `ctx.subagents`; must match the tool binding name. |
+| `executable` | `string` (`min(1)`) | `%USERPROFILE%/.gemini/bin/agy.exe` | Absolute path to the `agy` executable. |
+| `model` | `string` (`min(1)`) | `gemini-3.8-flash` | Base model name from `agy models` (e.g., `gemini-3.8-flash`, `gemini-4-argon`, `claude-opus-5-5`, `gpt-oss-120b`); reasoning effort is specified separately via `effort`, and explicit values always take precedence. |
+| `effort` | `low \| medium \| high \| xhigh \| max` | `medium` | Reasoning effort, mapped to `--effort`; under ACP, appended as a model suffix (e.g., `gemini-3.8-flash-medium`). |
+| `env` | `Record<string, string>` | `{}` | Environment variables injected into the child process, overlaid on top of the scrubbed environment. |
+| `permissionMode` | `dangerously-skip-permissions \| auto` | `dangerously-skip-permissions` | Permission mode. In print mode, tool confirmations are soft-rejected, so permissions are skipped by default; `auto` is only suitable for pure Q&A. |
+| `extraArgs` | `string[]` | `[]` | Extra CLI arguments appended directly to `agy`. |
+| `newProject` | `boolean` | `false` | Whether to pass `--new-project`. Disabled by default to avoid cluttering Desktop Projects with duplicate entries. |
+| `projectName` | `string` | `''` | When non-empty, maps to `--project <name>` to reuse a fixed project; takes precedence over `newProject`. |
+| `printTimeout` | `string` (`min(1)`) | None (wait indefinitely) | `--print-timeout` in Go duration format (e.g., `180s`, `10m`). Returns partial output and exits with 0 on timeout; cannot be used to judge task completion. |
+| `jsonSchema` | `string` (`min(1)`) | None | `--json-schema`, inline JSON or file path. |
+| `addDirs` | `string[]` | None | Additional read-only workspace directories, each mapped to `--add-dir`. |
+| `fallbackModel` | `string` (`min(1)`) | None (no retry) | Fallback model on quota exhaustion or rate limit; retries at most once. |
+| `retryOnRateLimit` | `boolean` | `false` | On HTTP 429 rate limits, backs off by the suggested duration and retries once (capped at 15s). |
+| `disposeGraceMs` | `number` | `3000` | Grace period (ms) when terminating child processes. |
+| `geminiProfileDir` | `string` (`min(1)`) | `~/.dsh/gemini-web-research/browser-profile` | Persistent browser profile directory for Gemini Web. Named `browser-profile` because the browser may be Edge or Chrome. |
+| `geminiPython` | `string` (`min(1)`) | `python` | Python executable used for Playwright scripts. |
+| `geminiHeadless` | `boolean` | `true` | Whether to run Gemini Web worker headless; login initialization is always headed. |
+| `geminiTimeoutMs` | `number` | `900000` | Hard timeout (ms) for a single Deep Research run. |
+| `geminiChatTimeoutMs` | `number` (`min(1000)`) | `180000` | Hard timeout (ms) for a single Gemini Chat message. |
+| `geminiWorkerIdleMs` | `number` (`min(0)`) | `600000` | Idle timeout (ms) before recycling the persistent worker; `0` disables auto-shutdown. |
+| `geminiWorkerMode` | `persistent \| oneshot` | `persistent` | `persistent` uses the long-lived worker; `oneshot` falls back to `run_research.py` for Deep Research (Chat still uses the worker, and `oneshot` does not support model/thinking selection). |
+| `geminiDefaultModel` | `string` | `''` | Default model ID (`flash-lite` / `flash` / `pro` / `argon`) when the panel has no saved local selection; empty follows the web default. |
+| `geminiDefaultThinking` | `string` | `''` | Default thinking level (`low` / `medium` / `high`) when the panel has no saved local selection; empty follows the web default. |
+| `teamProviderName` | `string` (`min(1)`) | `antigravity-team` | Team provider name; must differ from `providerName`. |
+| `teamEnabled` | `boolean` | `true` | Whether to register the `antigravity-team` provider. |
+| `parallelToolName` | `string` (`min(1)`) | `subagent_agy_parallel` | Name of the batch parallel tool. |
+| `parallelMaxTasks` | `number` (1–8) | `8` | Maximum number of tasks launched per batch call. |
 
 ---
 
-## 5. 架构说明
+## 5. Architecture
 
-### 5.1 agy 委派链路
+### 5.1 `agy` Delegation Pipeline
 
 ```
 apply()
   → provider.start(request)
-  → startAntigravityRunWithRetry()（仅在配置 fallbackModel / retryOnRateLimit 时）
+  → startAntigravityRunWithRetry() (only when fallbackModel / retryOnRateLimit is configured)
   → startAntigravityRun()
-  → spawn agy --print --output-format stream-json
-  → lib/wire.js 解析 stdout（NDJSON）
+  → spawn agy --print --output-format stream-json (or agy acp via lib/acp-client.js)
+  → lib/wire.js parses stdout (NDJSON)
   → settleRunResult() → { output, stopReason }
-  → 失败由 lib/classify.js 分类（quota_exhausted / rate_limited / usage_error / unknown）
+  → failures classified by lib/classify.js (quota_exhausted / rate_limited / usage_error / unknown)
 ```
 
-- `lib/run.js` 负责 argv 组装、spawn、收流、终止清理与退出结算。
-- `lib/wire.js` 负责按行切帧、校验 envelope、选答案（终态 `result.response` 优先，`text_delta` 兜底）与状态映射。
-- `lib/classify.js` 是纯函数错误分类器，零依赖。
-- `lib/parallel.js` 通过 `ctx.subagents.startActivation` 并发启动多个 agy 子智能体，立即返回 `{started, failed}`。
+- `lib/run.js`: Handles argv assembly, process spawning, stream collection, termination cleanup, and exit settlement.
+- `lib/wire.js`: Line-splits NDJSON frames, validates envelopes, selects the final answer (terminal `result.response` first, `text_delta` fallback), and maps terminal status.
+- `lib/classify.js`: Zero-dependency pure-function failure classifier.
+- `lib/parallel.js`: Concurrently launches multiple `agy` subagents via `ctx.subagents.startActivation`, returning `{started, failed}` immediately.
 
-### 5.2 Gemini 双队列 + 常驻 worker
+### 5.2 Gemini Dual-Queue + Persistent Worker
 
 ```
-lib/client.js（两个侧边栏面板）
-  ├── 「Gemini 调研」→ /models、/run、/job、/status
-  └── 「Gemini 对话」→ /models、/chat/send、/chat/job、/chat/status、/chat/new
+lib/client.js (two sidebar panels)
+  ├── "Gemini Research" → /models, /run, /job, /status
+  └── "Gemini Chat"     → /models, /chat/send, /chat/job, /chat/status, /chat/new
                 │
-lib/gemini-web.js（HTTP 桥接）
-  ├── researchQueue（串行）──┐
-  └── chatQueue（串行）──────┤
-                             ▼
-                GeminiWorkerClient（lib/worker-client.js）
-                  ├── 懒启动 python worker.py
-                  ├── JSONL 协议：request/result/heartbeat/progress
-                  ├── 崩溃拒绝 pending，下次请求自动重启
-                  ├── 空闲 geminiWorkerIdleMs 后 shutdown
-                  └── dispose() 杀进程树
-                             │
-                worker.py（常驻 Python）
-                  ├── 一个 Chromium persistent context（persistent 模式）
-                  ├── ChatPage（chat.send / chat.new / models.list / status）
-                  └── ResearchPage（research.run / models.list / status）
+lib/gemini-web.js (HTTP bridge)
+  ├── researchQueue (serial) ──┐
+  └── chatQueue (serial) ──────┤
+                               ▼
+                GeminiWorkerClient (lib/worker-client.js)
+                  ├── Lazy-starts python worker.py
+                  ├── JSONL protocol: request / result / heartbeat / progress
+                  ├── Rejects pending on crash; auto-restarts on next request
+                  ├── Shuts down after geminiWorkerIdleMs idle
+                  └── dispose() kills process tree
+                               │
+                worker.py (persistent Python worker)
+                  ├── Single Chromium persistent context (persistent mode)
+                  ├── ChatPage (chat.send / chat.new / models.list / status)
+                  └── ResearchPage (research.run / models.list / status)
 ```
 
-- 两条队列各自串行，但共享同一个 worker，所以 chat 与 research 使用两个独立 page 并行工作。
-- `geminiWorkerMode: oneshot` 时，research 队列回退到旧 `run_research.py`（每次启动一个 Python 进程），chat 仍走 worker；该模式下 research 不接受模型/思考参数。
-- 协议：stdin/stdout JSONL；命令 `chat.send`、`chat.new`、`research.run`、`models.list`、`status`、`shutdown`、`cancel`；响应 `ready`、`heartbeat`、`progress`、`result`（`ok/error/data`）。日志只写 stderr。
-- `chat.send` / `research.run` 可选 payload：`model`（id）、`modelLabel`（UI 文本，辅助匹配）、`thinking`（`low` / `medium` / `high`）；结果返回 `modelApplied` / `thinkingApplied` / `currentModel`。
+- Both queues are internally serial, yet share the same worker so Chat and Research run on two independent pages concurrently.
+- When `geminiWorkerMode: oneshot`, `researchQueue` falls back to `run_research.py` (spawning a Python process per run), while Chat still uses the worker; `oneshot` research does not accept model/thinking parameters.
+- Protocol: stdin/stdout JSONL; commands `chat.send`, `chat.new`, `research.run`, `models.list`, `status`, `shutdown`, `cancel`; responses `ready`, `heartbeat`, `progress`, `result` (`ok/error/data`). Logs go exclusively to stderr.
+- Optional payload for `chat.send` / `research.run`: `model` (ID), `modelLabel` (UI label for matching), `thinking` (`low` / `medium` / `high`); results return `modelApplied` / `thinkingApplied` / `currentModel`.
 
-### 5.3 浏览器 profile 与登录检测
+### 5.3 Browser Profile & Login Detection
 
-**浏览器选择**：`scripts/gemini_research/browser.py` 的 `default_browser_channel()` 读取 Windows 注册表 `Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice`：
+**Browser selection**: `default_browser_channel()` in `scripts/gemini_research/browser.py` reads the Windows Registry key `Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice`:
 
-- `ProgId` 含 `msedge` → `msedge`（Microsoft Edge）
-- 含 `chrome` → `chrome`（Google Chrome）
-- 无法识别 → `None`（Playwright 内置 Chromium）
+- `ProgId` contains `msedge` → `msedge` (Microsoft Edge)
+- Contains `chrome` → `chrome` (Google Chrome)
+- Unrecognized → `None` (Playwright bundled Chromium)
 
-当前本机默认浏览器为 **Microsoft Edge**，所以面板和脚本弹窗都是 Edge（Chromium 内核，外观与 Chrome 接近）。
+**Why a dedicated profile**: Playwright cannot reuse the User Data directory of an already-running Edge/Chrome instance (single-instance lock). The plugin uses an isolated profile at `~/.dsh/gemini-web-research/browser-profile` to persist login state after initial sign-in.
 
-**为什么用专用 profile**：Playwright 无法复用正在运行的 Edge/Chrome 的日常 User Data（浏览器单实例锁）。插件使用独立 profile `~/.dsh/gemini-web-research/browser-profile`，首次登录后长期保存登录态。
+**Two-layer login detection**:
 
-**登录检测（两层）**：
+1. `init_login.py` (Login initialization):
+   - Polls every second until a Google session cookie (`SID`) exists in the profile or page DOM indicates signed-in state.
+   - Writes `login-ok.json` and exits 0 on success; reports `browser window closed before login was detected` if closed prematurely.
+2. `login-state.json` (Runtime verification):
+   - Each worker page calls `selectors.is_logged_in()` before/after opening or running tasks and writes `{signedIn, checkedAt, error?}` via `record_login_state()`.
+   - Decision order: redirected to `accounts.google.com` → signed out; account menu present → signed in; editor visible without "Sign in to save activity" → signed in.
 
-1. `init_login.py`（初始化登录）：
-   - 每秒轮询，成功条件为 profile 中存在 Google 会话 cookie（`SID`）或页面 DOM 判断为已登录。
-   - 登录成功后写入 `login-ok.json` 并 exit 0；窗口关闭过早会明确报错 `browser window closed before login was detected`。
-2. `login-state.json`（运行时验证）：
-   - worker 的每个页面在打开/任务前后调用 `selectors.is_logged_in()`，并通过 `record_login_state()` 写入 `{signedIn, checkedAt, error?}`。
-   - 判定顺序：URL 跳到 `accounts.google.com` → 未登录；账号菜单存在 → 已登录；编辑器可见且没有「Sign in to save activity」→ 已登录。
+**Host status fields**:
 
-**宿主状态字段**：
+- `loginSaved`: Whether `login-ok.json` exists (historical login marker).
+- `loginReady`: `loginState.signedIn === true` and either the worker is online or `checkedAt` is within 5 minutes (grace period after fresh login).
+- Prevents stale `login-ok.json` files from causing false-positive "ready" states.
 
-- `loginSaved`：`login-ok.json` 是否存在（历史登录文件）。
-- `loginReady`：`loginState.signedIn === true` 且满足以下之一：worker 在线，或 `checkedAt` 距现在不超过 5 分钟（刚完成登录的宽限期）。
-- 这样旧的 `login-ok.json` 不会单独造成「已就绪」假阳性；重启 GUI 后 5 分钟内显示「已验证」，之后显示「待验证」，发起任务会自动重新验证。
+### 5.4 Model & Thinking Selection
 
-### 5.4 模型与思考强度
+Both panels provide **Model** and **Thinking** dropdowns sent with each `/run` or `/chat/send` request:
 
-两个面板各有「模型」和「思考强度」下拉，选择随每次 `/run` / `/chat/send` 请求下发：
-
-- **模型目录动态读取**：worker 的 `models.list` 打开 Gemini 模型菜单（`[data-test-id='bard-mode-menu-button']`），读取 `[data-test-id^='bard-mode-option-']` 选项；失败时回退到 `lib/gemini-models.js` 的静态目录（含 `3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`）。面板挂载时先取 `live=0` 的静态目录，点「刷新模型」才请求实时目录，避免打开面板就拉起 headless Edge。
-- **模型匹配**：输入先经 `_model_id_from_label()` 归一化（支持 `flash` / `Flash` / `3.8 Flash 全方位帮助` 等），菜单项按 id 精确匹配（`flash-lite` / `flash` / `pro` / `argon`），点选后回读模型 id 校验；`data-test-id` hash 只作提示。
-- **思考强度**：在模型菜单底部「思考等级」二级菜单中按结构断言必须正好 3 项，索引 0/1/2 对应 `low` / `medium` / `high`（文本为低/中/高，中英文都做 sanity 校验）。
-- **降级**：未请求模型/思考时保持网页默认；显式请求非默认但控件/选项不存在时返回 `model_unavailable` / `thinking_unavailable` 明确报错，不静默使用默认；只有 `/models` 目录读取失败才回退静态目录。
-- **Deep Research**：提交前模型按钮仍存在，面板同样提供选择；但 DR 是否真正采用所选模型尚未 E2E 验证，面板注明「可能不生效」。
-- **Deep Think**：当前页面没有独立控件，本期不做。
+- **Dynamic model catalog**: `models.list` opens the Gemini model menu (`[data-test-id='bard-mode-menu-button']`) and reads `[data-test-id^='bard-mode-option-']`; falls back to the static catalog in `lib/gemini-models.js` (`3.5 Flash-Lite` / `3.8 Flash` / `3.1 Pro` / `4 Argon`) on failure. Panels fetch `live=0` on mount and only query live models when clicking **Refresh Models**, avoiding unnecessary headless browser launches.
+- **Model matching**: Inputs are normalized via `_model_id_from_label()` (supporting `flash`, `Flash`, `3.8 Flash ...`, etc.), matched by exact ID (`flash-lite` / `flash` / `pro` / `argon`), and verified by reading back the active model ID.
+- **Thinking level**: Opens the "Thinking level" submenu at the bottom of the model menu, asserts exactly 3 items, and maps indices 0/1/2 to `low` / `medium` / `high` (sanity-checked in both English and Chinese).
+- **Fallback behavior**: Keeps web defaults when no model/thinking is requested; returns `model_unavailable` / `thinking_unavailable` explicitly if a requested non-default option is missing rather than silently falling back. Only `/models` catalog fetch failures fall back to the static catalog.
+- **Deep Research**: The model button is exposed before submission, so the panel offers selection, though whether Deep Research actually honors the selected model is not yet E2E-verified (noted in the UI as "may not take effect").
+- **Deep Think**: Not implemented yet as there is no standalone control on the current page.
 
 ---
 
-## 6. 目录结构与模块分工
+## 6. Directory Structure & Modules
 
 ```
 dsh-subagent-agy/
-├── AGENTS.md                  # 开发与维护规范
-├── README.md                  # 项目说明（本文件）
-├── cordis.patch.yml           # 插件插入补丁：provider 与 tool 绑定
-├── package.json               # ESM 声明、peerDependencies、files 白名单
-├── icon.svg                   # 插件图标
+├── AGENTS.md                  # Development & maintenance guidelines
+├── README.md                  # English documentation (this file)
+├── README_CN.md               # Chinese documentation
+├── cordis.patch.yml           # Plugin patch: provider & tool bindings
+├── package.json               # ESM manifest, peerDependencies, files allowlist
+├── icon.svg                   # Plugin icon
 ├── docs/
-│   ├── agy-acp-transport.md           # ACP 传输通道交付文档（用法/架构/验证/风险）
-│   ├── agy-acp-transport-design.md    # ACP 接入方案设计
-│   ├── agy-acp-transport-review.md    # ACP 实现代码审核记录
-│   ├── settings-ui.md                 # 设置页 UI 交付文档（字段总表/架构/验证/风险）
-│   ├── settings-ui-design.md          # 设置页 UI 集成方案设计
-│   ├── settings-ui-review.md          # 设置页 UI 代码审核记录
-│   └── headless-scripting-plan.md     # headless 能力调研记录
+│   ├── agy-acp-transport.md           # ACP transport delivery doc (usage/architecture/verification/risks)
+│   ├── agy-acp-transport-design.md    # ACP integration design
+│   ├── agy-acp-transport-review.md    # ACP implementation review notes
+│   ├── settings-ui.md                 # Settings UI delivery doc (fields/architecture/verification/risks)
+│   ├── settings-ui-design.md          # Settings UI integration design
+│   ├── settings-ui-review.md          # Settings UI code review notes
+│   └── headless-scripting-plan.md     # Headless scripting research notes
 ├── lib/
-│   ├── index.js               # Cordis 插件入口：Config、Provider、apply
-│   ├── run.js                 # agy 进程生命周期与可选重试（stream-json）
-│   ├── acp-client.js          # ACP 传输：agy acp / JSON-RPC / 权限应答 / 重试
-│   ├── wire.js                # NDJSON 流解析
-│   ├── classify.js            # 失败分类与 retry-after 解析
-│   ├── client.js              # 两个侧边栏面板（Gemini 调研 / Gemini 对话）+ 设置页
-│   ├── gemini-web.js          # /api/dsh-gemini-research/* 桥接、双队列、登录态
-│   ├── gemini-models.js       # 静态模型目录、目录归一化、模型/思考校验与匹配
-│   ├── worker-client.js       # 常驻 worker 客户端（懒启动/重启/空闲回收）
-│   ├── parallel.js            # subagent_agy_parallel 批量并发工具
+│   ├── index.js               # Cordis plugin entry: Config, Provider, apply
+│   ├── run.js                 # agy process lifecycle & optional retry (stream-json)
+│   ├── acp-client.js          # ACP transport: agy acp / JSON-RPC / permissions / retry
+│   ├── wire.js                # NDJSON stream parser
+│   ├── classify.js            # Failure classification & retry-after parser
+│   ├── client.js              # Two sidebar panels (Gemini Research / Gemini Chat) + Settings UI
+│   ├── gemini-web.js          # /api/dsh-gemini-research/* bridge, dual queues, login state
+│   ├── gemini-models.js       # Static model catalog, normalization, validation & token matching
+│   ├── worker-client.js       # Persistent worker client (lazy start/restart/idle recycle)
+│   ├── parallel.js            # subagent_agy_parallel batch concurrent tool
 │   └── types/
-│       └── index.d.ts         # 手写 TypeScript 类型
+│       └── index.d.ts         # Hand-written TypeScript declarations
 ├── locale/
-│   ├── zh.json                # 中文描述与触发词
-│   └── en.json                # 英文描述与触发词
+│   ├── zh.json                # Chinese descriptions & trigger keywords
+│   └── en.json                # English descriptions & trigger keywords
 ├── scripts/
 │   └── gemini_research/
-│       ├── browser.py         # 解析系统默认浏览器（Chrome/Edge）
-│       ├── init_login.py      # 持久化 profile 登录（SID cookie + DOM）
-│       ├── worker.py          # 常驻 worker：一个 context + chat/research 两个 page
-│       ├── chat_page.py       # 普通对话页：输入、完成判定、回复提取
-│       ├── research_page.py   # Deep Research 页：计划审批、轮询报告、正文提取
-│       ├── selectors.py       # 共享选择器、登录检测、可见性、调试截图
-│       └── run_research.py    # 旧单次 Deep Research 脚本（oneshot 回退）
+│       ├── browser.py         # Resolves system default browser (Chrome/Edge)
+│       ├── init_login.py      # Persistent profile login (SID cookie + DOM)
+│       ├── worker.py          # Persistent worker: one context + chat/research pages
+│       ├── chat_page.py       # Regular chat page: input, completion detection, reply extraction
+│       ├── research_page.py   # Deep Research page: plan approval, report polling, text extraction
+│       ├── selectors.py       # Shared selectors, login check, visibility, debug screenshots
+│       └── run_research.py    # Legacy one-shot Deep Research script (oneshot fallback)
 └── test/
-    ├── acp-client.test.js     # ACP 分帧、握手、权限、stopReason、重试
-    ├── classify.test.js       # 失败分类与延时解析
-    ├── gemini-models.test.js  # 模型目录归一化、校验与 token 匹配
-    ├── gemini-web.test.js     # 双队列、路由、登录态、任务摘要
-    ├── parallel.test.js       # 批量并发任务规范化与渲染
-    ├── settings-ui.test.js    # 设置页字段表/分组/解析/序列化/apply 接线
-    ├── test_selectors.py      # Python 完成判定纯函数
-    ├── worker-client.test.js  # worker 协议、崩溃重启、超时、空闲回收
-    └── wire.test.js           # NDJSON 协议解析
+    ├── acp-client.test.js     # ACP framing, handshake, permissions, stopReason, retry
+    ├── classify.test.js       # Failure classification & delay parsing
+    ├── gemini-models.test.js  # Model catalog normalization, validation & token matching
+    ├── gemini-web.test.js     # Dual queues, routes, login state, job summaries
+    ├── parallel.test.js       # Batch parallel task normalization & rendering
+    ├── settings-ui.test.js    # Settings UI field table/groups/parsing/serialization/apply wiring
+    ├── test_selectors.py      # Python completion-detection pure function tests
+    ├── worker-client.test.js  # Worker protocol, crash restart, timeout, idle recycle
+    └── wire.test.js           # NDJSON protocol parsing
 ```
 
-### 6.1 模块职责
+### 6.1 Module Responsibilities
 
-- `lib/wire.js`：纯 NDJSON 帧解析（`AntigravityStream`）。按行切帧、校验 envelope、选答案、映射终态状态、收集错误文本。
-- `lib/classify.js`：纯函数失败分类。`classifyFailure()` → `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`；`parseRetryAfterMs()` 解析 retry-after / `Resets in XhYmZs`。
-- `lib/client.js`：DSH 客户端面板。lazy-CJS（`window.__ModuleLoader__.load`），只依赖 React；注册两个 `sidebar.panellist` 入口（order 30 / 31）和两个 `main` keyed slot。
-- `lib/gemini-web.js`：主机侧 HTTP 桥接。`createJobQueue` 派生出 research / chat 两条串行队列；共享一个 `GeminiWorkerClient`；提供 `/models`、`/status`、`/chat/status`、`/login/init`、`/run`、`/chat/send`、`/chat/new`、`/chat/latest`、`/chat/job`、`/job`、`/latest`；注册模型可见工具 `gemini_web_research`。
-- `lib/gemini-models.js`：静态模型/思考目录（含 4 Argon）、`normalizeModelCatalog()`、`validateModel()` / `validateThinking()`、按 id 精确匹配模型菜单项。
-- `lib/worker-client.js`：常驻 worker 客户端。懒启动、`ready` 握手、请求 id 关联、progress 转发、超时 cancel、崩溃拒绝 pending、空闲 shutdown、dispose 杀进程树；`health` 暴露 `{running, ready, pid, lastHeartbeatAt, lastError, stderrTail}`。
-- `lib/parallel.js`：DSH 侧批量并发工具。
-- `scripts/gemini_research/worker.py`：常驻 Python worker，持有一个 persistent context 与 chat/research 两个 page，JSONL 协议。
-- `scripts/gemini_research/chat_page.py` / `research_page.py`：页面级操作与完成判定。
-- `scripts/gemini_research/selectors.py`：所有候选选择器、登录判断、输入提交、回复提取、调试截图。
-- `scripts/gemini_research/init_login.py`：headed 登录脚本，写 `login-ok.json`。
-- `scripts/gemini_research/run_research.py`：旧单次 Deep Research 脚本，`oneshot` 回退。
-- `scripts/gemini_research/browser.py`：`default_browser_channel()` / `browser_label()`。
+- `lib/wire.js`: Pure NDJSON frame parser (`AntigravityStream`). Line-splits frames, validates envelopes, picks final answer, maps terminal status, and collects error text.
+- `lib/classify.js`: Pure-function failure classifier. `classifyFailure()` → `quota_exhausted` / `rate_limited` / `usage_error` / `unknown`; `parseRetryAfterMs()` parses retry-after / `Resets in XhYmZs`.
+- `lib/client.js`: DSH client panels. Lazy-CJS (`window.__ModuleLoader__.load`) depending only on React; registers two `sidebar.panellist` entries (order 30 / 31) and two `main` keyed slots.
+- `lib/gemini-web.js`: Host-side HTTP bridge. `createJobQueue` creates separate `research` / `chat` serial queues sharing one `GeminiWorkerClient`; serves `/models`, `/status`, `/chat/status`, `/login/init`, `/run`, `/chat/send`, `/chat/new`, `/chat/latest`, `/chat/job`, `/job`, `/latest`; registers `gemini_web_research`.
+- `lib/gemini-models.js`: Static model/thinking catalog (including 4 Argon), `normalizeModelCatalog()`, `validateModel()` / `validateThinking()`, exact ID matching for model menu items.
+- `lib/worker-client.js`: Persistent worker client. Lazy start, `ready` handshake, request ID correlation, progress forwarding, timeout cancellation, crash rejection, idle shutdown, `dispose()` tree kill; `health` exposes `{running, ready, pid, lastHeartbeatAt, lastError, stderrTail}`.
+- `lib/parallel.js`: DSH-side batch concurrency tool.
+- `scripts/gemini_research/worker.py`: Persistent Python worker holding one persistent context and `chat` / `research` pages over JSONL.
+- `scripts/gemini_research/chat_page.py` / `research_page.py`: Page-level actions and completion detection.
+- `scripts/gemini_research/selectors.py`: Candidate selectors, login checks, input submission, reply extraction, debug screenshots.
+- `scripts/gemini_research/init_login.py`: Headed login script writing `login-ok.json`.
+- `scripts/gemini_research/run_research.py`: Legacy one-shot Deep Research script for `oneshot` fallback.
+- `scripts/gemini_research/browser.py`: `default_browser_channel()` / `browser_label()`.
 
 ### 6.2 HTTP API
 
-前缀：`/api/dsh-gemini-research`
+Prefix: `/api/dsh-gemini-research`
 
-| 方法 | 路径 | 作用 |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/status` | 综合状态：登录、worker、research / chat 队列与任务 |
-| GET | `/models?mode=chat\|research` | 模型/思考目录（实时读取，失败回退静态目录）与配置默认值 |
-| GET | `/chat/status` | 对话面板状态 |
-| POST | `/login/init` | 停止 worker 并启动 `init_login.py`（有任务时 409） |
-| POST | `/run` | 提交 Deep Research 任务，可选 `model` / `thinking`，返回 `{jobId}` |
-| POST | `/chat/send` | 提交对话消息，可选 `model` / `thinking`，返回 `{jobId}` |
-| POST | `/chat/new` | 清空当前对话上下文（有对话任务时 409） |
-| GET | `/chat/latest` | 最近一条对话任务与 `conversationUrl` |
-| GET | `/chat/job?id=` | 查询对话任务 |
-| GET | `/job?id=` | 查询任务（research 或 chat） |
-| GET | `/latest` | 最近一条调研任务 |
+| GET | `/status` | Combined status: login, worker, research / chat queues & jobs |
+| GET | `/models?mode=chat\|research` | Model/thinking catalog (live fetch with static fallback) and configured defaults |
+| GET | `/chat/status` | Chat panel status |
+| POST | `/login/init` | Stops worker and launches `init_login.py` (409 if jobs are running) |
+| POST | `/run` | Submits a Deep Research job with optional `model` / `thinking`; returns `{jobId}` |
+| POST | `/chat/send` | Submits a chat message with optional `model` / `thinking`; returns `{jobId}` |
+| POST | `/chat/new` | Clears current chat context (409 if a chat job is running) |
+| GET | `/chat/latest` | Latest chat job and `conversationUrl` |
+| GET | `/chat/job?id=` | Query a chat job |
+| GET | `/job?id=` | Query a job (research or chat) |
+| GET | `/latest` | Latest research job |
 
 ---
 
-## 7. 验证与测试
+## 7. Verification & Testing
 
-### 7.1 单元测试
+### 7.1 Unit Tests
 
 ```powershell
 npm test
-# 或
+# or
 node --test --test-isolation=none
 ```
 
-当前共 **99 个用例**，覆盖 `wire.js` / `classify.js` / `gemini-web.js` / `gemini-models.js` / `worker-client.js` / `parallel.js` / `acp-client.js` / `settings-ui.test.js`（设置页字段表/解析/序列化/接线）；另有 Python 完成判定与模型匹配用例：
+Covers **99 test cases** across `wire.js`, `classify.js`, `gemini-web.js`, `gemini-models.js`, `worker-client.js`, `parallel.js`, `acp-client.js`, and `settings-ui.test.js`, plus Python pure-function tests for completion detection and model matching:
 
 ```powershell
 python -m unittest test/test_selectors.py
 ```
 
-> DSH 受限 shell 内若报 `spawn EPERM`，改用 `node --test --test-isolation=none`。
+> If `spawn EPERM` occurs inside a restricted DSH shell, use `node --test --test-isolation=none`.
 
-### 7.2 语法检查
+### 7.2 Syntax Checks
 
 ```powershell
 node --check lib/index.js; node --check lib/run.js; node --check lib/wire.js; node --check lib/classify.js; node --check lib/client.js; node --check lib/gemini-web.js; node --check lib/worker-client.js; node --check lib/parallel.js; node --check lib/acp-client.js
 python -m py_compile scripts/gemini_research/browser.py scripts/gemini_research/init_login.py scripts/gemini_research/run_research.py scripts/gemini_research/worker.py scripts/gemini_research/chat_page.py scripts/gemini_research/research_page.py scripts/gemini_research/selectors.py
 ```
 
-### 7.3 快速冒烟
+### 7.3 Quick Smoke Tests
 
 ```powershell
-# NDJSON 7 字节分片重组：期望 completed + 文本
+# NDJSON 7-byte chunk reassembly: expects completed + text
 node -e "import('./lib/wire.js').then(({AntigravityStream})=>{const s=new AntigravityStream('t');const t=[JSON.stringify({event:'init',conversation_id:'c1'}),JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta:'par'}}),JSON.stringify({event:'result',result:{status:'SUCCESS',response:'partial answer'}})].join('\n')+'\n';for(let i=0;i<t.length;i+=7)s.push(t.slice(i,i+7));s.end();console.log(s.result(),s.conversationId)})"
 
-# 失败分类：期望 rate_limited / quota_exhausted / usage_error
+# Failure classification: expects rate_limited / quota_exhausted / usage_error
 node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(classifyFailure('429 too many requests',{exitCode:1}),classifyFailure('quota limit exceeded',{exitCode:1}),classifyFailure('x',{exitCode:2})))"
 ```
 
-### 7.4 手动 E2E 清单
+### 7.4 Manual E2E Checklist
 
-1. 点「初始化登录」→ 系统默认浏览器打开 → 登录 → 面板显示「登录态已验证」。
-2. 「Gemini 对话」发一条消息 → 收到回复 → 追问确认多轮上下文。
-3. 「新对话」后上下文清空。
-4. 发起 Deep Research 的同时在对话面板发消息 → 两边都正常，确认双队列互不阻塞。
-5. 关闭 GUI 再重开 → worker 按需重启，会话 URL / 登录态可恢复或重新验证。
+1. Click **Initialize Login** → system default browser opens → sign in → panel shows verified login state.
+2. Send a message in **Gemini Chat** → receive reply → follow up to verify multi-turn context.
+3. Click **New Chat** → context resets.
+4. Start Deep Research while sending a message in Gemini Chat → both succeed, confirming the dual queues do not block each other.
+5. Close and reopen the GUI → worker restarts on demand, and session URL / login state recovers or re-verifies.
 
 ---
 
-## 8. 已知限制与注意事项
+## 8. Known Limitations & Notes
 
-1. **ToS 与风控**：Google 服务条款禁止自动化访问；网页端自动化可能触发风控甚至封号，建议使用专用账号、控制频率，不要拿主账号批量跑。
-2. **选择器漂移**：Gemini 网页 UI 改版会导致选择器失效。所有选择器集中在 `scripts/gemini_research/selectors.py`，失败时会在 profile 目录留下 `debug-*.png`，整体属于 best-effort。
-3. **浏览器单实例**：同一个 `geminiProfileDir` 同时只能有一个浏览器实例。chat / research 通过一个常驻 worker 的两个 page 并发；不要为两者各起一个浏览器。初始化登录前会先停 worker 释放 profile。
-4. **专用 profile**：不能直接复用日常 Edge/Chrome 的 User Data（浏览器单实例锁）；首次使用需要在专用 profile 中登录一次。
-5. **Deep Research 额度**：Google AI Pro 约每天 20 次，单次通常 5–10 分钟。
-6. **未登录对话**：普通对话允许未登录使用，但没有历史记录；Deep Research 必须登录。
-7. **一次性委派无法续聊**：`agy --print` 执行完即退出，不继承父会话上下文；任务 prompt 必须自包含。
-8. **`--print-timeout` 语义**：到期会返回部分输出、stderr 打 warning 并以 exit 0 退出；`printTimeout` 只是兜底截断，不能据此判断任务完整完成。
-9. **Windows 路径默认值**：默认 `executable` 是 Windows 的 `agy.exe`；迁移到 Linux/macOS 需在配置中显式指定可执行文件路径。
-10. **模型/思考选择**：菜单项随账号/版本可能变化；实时目录读取失败会回退静态目录，选择结果以 `modelApplied` / `thinkingApplied` 为准。Deep Research 内选择是否真正影响报告仍待最小 E2E 验证。
+1. **ToS & Risk Controls**: Google's Terms of Service prohibit automated access; web automation may trigger risk controls or account suspension. Use a dedicated account, keep frequency low, and do not run batch jobs on your primary account.
+2. **Selector Drift**: Gemini Web UI updates may break selectors. All selectors live in `scripts/gemini_research/selectors.py`, and failures save `debug-*.png` in the profile directory; overall this is best-effort.
+3. **Single Browser Instance**: Only one browser instance may use a given `geminiProfileDir` at a time. Chat and Research run concurrently via two pages in one persistent worker; do not launch separate browsers for them. Initializing login stops the worker first to release the profile.
+4. **Dedicated Profile**: Cannot reuse your daily Edge/Chrome User Data directory due to the browser single-instance lock; sign in once in the dedicated profile on first use.
+5. **Deep Research Quota**: Google AI Pro allows roughly 20 runs per day, each taking ~5–10 minutes.
+6. **Signed-out Chat**: Regular chat works without signing in (without history); Deep Research requires login.
+7. **No Follow-ups on One-shot Delegation**: `agy --print` exits upon completion and does not inherit parent session context; prompts must be self-contained.
+8. **`--print-timeout` Semantics**: On timeout, `agy` returns partial output, logs a warning to stderr, and exits with 0; `printTimeout` is only a fallback cutoff and does not indicate full task completion.
+9. **Windows Default Executable**: The default `executable` is Windows `agy.exe`; on Linux/macOS, specify the executable path explicitly in config.
+10. **Model / Thinking Selection**: Menu items may vary by account or rollout; live catalog failures fall back to the static catalog, and applied options are reported via `modelApplied` / `thinkingApplied`. Whether Deep Research honors the selected model still awaits minimal E2E verification.

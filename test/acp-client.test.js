@@ -229,7 +229,7 @@ test('classifyAcpFailure: 复用 classifyFailure，并补 stage/category', () =>
 	assert.equal(classifyAcpFailure(new (Object.getPrototypeOf(new Error()).constructor)('x'), undefined).stage, 'unknown');
 });
 
-test('permission: 策略选择 + 扁平结果形状（design §1.7）', () => {
+test('permission: 策略选择 + ACP v1 嵌套结果形状', () => {
 	const options = [
 		{ optionId: 'reject-1', name: 'Reject', kind: 'reject_once' },
 		{ optionId: 'allow-1', name: 'Allow', kind: 'allow_once' },
@@ -237,11 +237,15 @@ test('permission: 策略选择 + 扁平结果形状（design §1.7）', () => {
 	assert.equal(selectPermissionOption(options, 'auto-approve'), 'allow-1');
 	assert.equal(selectPermissionOption(options, 'first-allow'), 'allow-1');
 	assert.equal(selectPermissionOption(options, 'reject'), undefined);
-	assert.deepEqual(buildPermissionResult({ options }, 'auto-approve'), { outcome: 'selected', optionId: 'allow-1' });
-	assert.deepEqual(buildPermissionResult({ options }, 'reject'), { outcome: 'cancelled' });
-	assert.deepEqual(buildPermissionResult({ options }, 'reject', 'nested'), { outcome: { outcome: 'cancelled' } });
-	assert.deepEqual(buildPermissionResult({ options }, 'allow-1'), { outcome: 'selected', optionId: 'allow-1' });
-	assert.deepEqual(buildPermissionResult({ options: [] }, 'auto-approve'), { outcome: 'cancelled' });
+	// ACP v1 要求 outcome 是 RequestPermissionOutcome 对象; 扁平字符串会被 agy 判为
+	// `cannot unmarshal string into Go struct field ... of type acp.AllowedOutcome`。
+	assert.deepEqual(buildPermissionResult({ options }, 'auto-approve'), { outcome: { outcome: 'selected', optionId: 'allow-1' } });
+	assert.deepEqual(buildPermissionResult({ options }, 'reject'), { outcome: { outcome: 'cancelled' } });
+	assert.deepEqual(buildPermissionResult({ options }, 'allow-1'), { outcome: { outcome: 'selected', optionId: 'allow-1' } });
+	assert.deepEqual(buildPermissionResult({ options: [] }, 'auto-approve'), { outcome: { outcome: 'cancelled' } });
+	// 扁平形状仍可显式 opt-in（兼容按旧设计文档实现的 agent）。
+	assert.deepEqual(buildPermissionResult({ options }, 'auto-approve', 'flat'), { outcome: 'selected', optionId: 'allow-1' });
+	assert.deepEqual(buildPermissionResult({ options }, 'reject', 'flat'), { outcome: 'cancelled' });
 });
 
 test('acpArgv: agy acp 加 extraArgs', () => {
@@ -305,7 +309,7 @@ test('AcpClient: start() 内置握手 + 权限自动允许 + 文本增量收集'
 	assert.equal(outcome.stopReason, 'end_turn');
 	assert.deepEqual(outcome.usage, { inputTokens: 1, outputTokens: 1, totalTokens: 2 });
 	assert.deepEqual(agentTexts, ['O', 'K']);
-	assert.deepEqual(permissionResponses, [{ outcome: 'selected', optionId: 'allow-1' }]);
+	assert.deepEqual(permissionResponses, [{ outcome: { outcome: 'selected', optionId: 'allow-1' } }]);
 
 	await client.dispose();
 });
@@ -336,7 +340,7 @@ test('AcpClient: permissionPolicy=reject 时回 cancelled', async () => {
 	await client.newSession();
 	const outcome = await client.prompt('s', [{ type: 'text', text: 'go' }]);
 	assert.equal(outcome.stopReason, 'cancelled');
-	assert.deepEqual(permissionResponses, [{ outcome: 'cancelled' }]);
+	assert.deepEqual(permissionResponses, [{ outcome: { outcome: 'cancelled' } }]);
 	await client.dispose();
 });
 
@@ -424,6 +428,51 @@ test('startAcpRun: 成功返回 completed，addDirs 映射到 session/new.additi
 	assert.deepEqual(newSessionRequest.params.additionalDirectories, ['C:/extra']);
 	assert.equal(newSessionRequest.params.model, 'gemini-3.8-flash-medium', '未显式配置 model 时默认 flash');
 	await handle.dispose();
+});
+
+test('startAcpRun: 只有 Gemini 基础名拼 effort 后缀，claude/gpt 保持原样', async () => {
+	// claude 系没有 effort 档位（CLI 直接拒绝 --effort），拼上就是 CLI 从未发布过的 id。
+	const cases = [
+		['gemini-3.8-flash', 'high', 'gemini-3.8-flash-high'],
+		['gemini-3.8-flash-medium', 'high', 'gemini-3.8-flash-medium'],
+		['claude-sonnet-4-6', 'high', 'claude-sonnet-4-6'],
+		['claude-opus-4-6-thinking', 'high', 'claude-opus-4-6-thinking'],
+		['gpt-oss-120b-medium', 'high', 'gpt-oss-120b-medium'],
+	];
+	for (const [model, effort, expected] of cases) {
+		const requests = [];
+		const spawn = fakeSpawn((message, reply) => {
+			requests.push(message);
+			if (message.method === 'initialize') {
+				reply({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentInfo: { name: 'Antigravity ACP Server' }, authMethods: [], sessionCapabilities: {} } });
+			} else if (message.method === 'session/new') {
+				reply({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sm', models: { availableModels: [], currentModelId: message.params.model } } });
+			} else if (message.method === 'session/prompt') {
+				setImmediate(() => reply({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } }));
+			}
+		});
+		const controller = new AbortController();
+		const handle = await startAcpRun(
+			{ prompt: [{ type: 'text', text: 'hi' }], signal: controller.signal, cwd: 'C:/ws' },
+			{
+				cwd: 'C:/ws',
+				executable: 'agy.exe',
+				env: {},
+				permissionMode: 'dangerously-skip-permissions',
+				model,
+				effort,
+				acpFallbackToStreamJson: false,
+				disposeGraceMs: 1000,
+				spawn,
+				writeStderr: () => {},
+				onError: () => {},
+			},
+		);
+		await handle.result;
+		const newSession = requests.find((item) => item.method === 'session/new');
+		assert.equal(newSession.params.model, expected, `${model} 应发送 ${expected}`);
+		await handle.dispose();
+	}
 });
 
 test('startAcpRunWithRetry: 首轮 quota 失败后按 fallbackModel 重试成功（使用 dispose 而非不存在的 teardown）', async () => {

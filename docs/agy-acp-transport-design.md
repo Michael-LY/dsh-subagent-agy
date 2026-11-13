@@ -113,22 +113,27 @@
 {"jsonrpc":"2.0","id":"perm-7","method":"session/request_permission","params":{"sessionId":"sess_01HZX...","toolCall":{"toolCallId":"tc-1","title":"write_file","kind":"edit"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"deny","name":"Deny","kind":"reject_once"}]}}
 ```
 
-客户端响应（选择某个 option）：
+客户端响应（选择某个 option）。`outcome` 是 ACP v1 的 `RequestPermissionOutcome` **对象**，不是字符串：
 
 ```json
-{"jsonrpc":"2.0","id":"perm-7","result":{"outcome":"selected","optionId":"allow"}}
+{"jsonrpc":"2.0","id":"perm-7","result":{"outcome":{"outcome":"selected","optionId":"allow"}}}
 ```
 
 或直接取消：
 
 ```json
-{"jsonrpc":"2.0","id":"perm-7","result":{"outcome":"cancelled"}}
+{"jsonrpc":"2.0","id":"perm-7","result":{"outcome":{"outcome":"cancelled"}}}
 ```
 
 要点：
+- **`outcome` 必须是嵌套对象**。扁平写法 `{"outcome":"selected","optionId":"allow"}` 会被 `agy` 判为
+  `cannot unmarshal string into Go struct field RequestPermissionResult.outcome of type acp.AllowedOutcome`，
+  该次工具调用被当成拒绝（日志 `Tool confirmation ... approved=false`）并取消整轮。
+  依据：ACP v1 规范 *Tool Calls → Requesting permission*。
 - **headless 下必须自动应答**。默认策略（`permissionPolicy: 'auto-approve'`）选 `options` 里第一个「allow 类」选项（`kind` 前缀 `allow`，否则退回 `options[0].optionId`）。这与现有默认 `permissionMode='dangerously-skip-permissions'` 的语义一致。
-- 若 `permissionMode === 'auto'`，建议 `permissionPolicy: 'first-allow'` 或 `'reject'`：只放行一次 / 其余回 `{"outcome":"cancelled"}`（`auto` 本就意味着不保证能读工作区）。
+- 若 `permissionMode === 'auto'`，建议 `permissionPolicy: 'first-allow'` 或 `'reject'`：只放行一次 / 其余回 `{"outcome":{"outcome":"cancelled"}}`（`auto` 本就意味着不保证能读工作区）。
 - 该响应是**同步必需的**：收到就立刻回，不能等 prompt 结束。
+- 旧的扁平形状仍可通过 `permissionResponseShape: 'flat'` 显式 opt-in，仅用于兼容按旧版设计文档实现的 agent。
 
 ### 1.8 终止与 usage
 

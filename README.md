@@ -20,6 +20,7 @@ DSH (DeepSeek Harness) plugin: delegate one-shot tasks to the local **Antigravit
 - [6. Directory Structure & Modules](#6-directory-structure--modules)
 - [7. Verification & Testing](#7-verification--testing)
 - [8. Known Limitations & Notes](#8-known-limitations--notes)
+- [9. Comparison with Official Subagent Plugins (Codex / Claude Code) & This Optimization](#9-comparison-with-official-subagent-plugins-codex--claude-code--this-optimization)
 
 ---
 
@@ -471,3 +472,40 @@ node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(class
 8. **`--print-timeout` Semantics**: On timeout, `agy` returns partial output, logs a warning to stderr, and exits with 0; `printTimeout` is only a fallback cutoff and does not indicate full task completion.
 9. **Windows Default Executable**: The default `executable` is Windows `agy.exe`; on Linux/macOS, specify the executable path explicitly in config.
 10. **Model / Thinking Selection**: Menu items may vary by account or rollout; live catalog failures fall back to the static catalog, and applied options are reported via `modelApplied` / `thinkingApplied`. Whether Deep Research honors the selected model still awaits minimal E2E verification.
+
+---
+
+## 9. Comparison with Official Subagent Plugins (Codex / Claude Code) & This Optimization
+
+This section compares how `dsh-subagent-agy` invokes `agy` as a subagent with the two official DSH subagent plugins — `@deepseek-ai/dsh-subagent-codex` and `@deepseek-ai/dsh-subagent-claude-code` — and lists the concrete optimizations of this round. Full evidence, with `file:line` citations, is in [`docs/subagent-invocation-research.md`](docs/subagent-invocation-research.md).
+
+### 9.1 Same contract, different transport
+
+All three register a provider on `ctx.subagents` with `NO_START_CAPABILITIES`, `inheritsParentContext = false`, and `maxDepth: provider-managed` in `cordis.patch.yml`. Each one runs a single fresh, non-interactive child, publishes a one-shot run, and disposes to quiescence. What differs is the substrate:
+
+- **Codex** — a fixed package-local `app-server --stdio`; JSON-RPC `initialize` → `thread/start` (ephemeral) → `turn/start`.
+- **Claude Code** — the official Agent SDK `query()` with its managed CLI process placed under the shared subprocess owner.
+- **agy** — the local `agy` CLI; default `transport: acp` (`initialize` → `session/new` → `session/prompt`), with `stream-json` (`--print --output-format stream-json`) as the fallback/legacy path.
+
+### 9.2 Key differences
+
+| Item | Codex | Claude Code | agy |
+|---|---|---|---|
+| `permissionMode` default | `never` | `dontAsk` | `dangerously-skip-permissions` (intentional) |
+| `model` default | inherit product settings | inherit product settings | pinned `gemini-3.8-flash` |
+| Publish gate | after `initialize` + `thread/start` | after a controllable CLI handle | ACP: after `initialize` + `session/new`; stream-json: after spawn |
+| Startup failure | fixed safe facts + cause | fixed safe facts + cause + `logger.warn` | fixed safe facts + cause + `logger.warn` |
+| Failure diagnostic | stage/category/HTTP/exit code/signal | stage/category/exit code/signal | stage/category/exit code/signal |
+| Teardown failure | `stage:'teardown'` | `stage:'teardown'` | `stage:'teardown'` (stream-json path) |
+| Retry / fallback | none | none | optional, off by default |
+
+### 9.3 Optimizations in this round
+
+1. **Structured startup failure in `lib/index.js`** — wrap the `start()` cwd/executable checks in a fixed-safe-fact failure (`stage:'initialize'`, `category:'unknown'`) with the original error on `cause`, and log via `ctx.logger.warn`; stop leaking the absolute executable path.
+2. **Richer failure diagnostics in `lib/run.js`** — append `exit code` / `signal` when a process outcome is known, and classify teardown failures as `stage:'teardown'`.
+3. **ACP publish-after-handshake (verified, not changed)** — the ACP path already publishes only after `initialize` + `session/new` succeed; this invariant is covered by the existing `test/acp-client.test.js` handshake-order cases (no new test added).
+4. **Config alignment (discussion only)** — `disposeGraceMs` validation, the `env` default and the `permissionMode` union are already aligned; whether `model` should be allowed to omit/inherit is a product decision (default unchanged).
+
+### 9.4 Unchanged design intent
+
+The existing deliberate behaviors are preserved: default `permissionMode = dangerously-skip-permissions`, retry off by default, `exit 0` counts as success, `SCRUBBED_ENV` set to empty strings (not deleted), `transport` default `acp`, and `NO_START_CAPABILITIES` + `inheritsParentContext = false`.

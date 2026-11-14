@@ -23,7 +23,7 @@ registerHooks({
 	},
 });
 
-const { antigravityArgv } = await import('../lib/run.js');
+const { antigravityArgv, AntigravityRunFailure, failureDiagnostic } = await import('../lib/run.js');
 
 const BASE = {
 	executable: 'agy.exe',
@@ -67,4 +67,56 @@ test('antigravityArgv: projectName 为空串时回落到 newProject 开关', () 
 	const args = argv({ newProject: true, projectName: '' });
 	assert.equal(args.includes('--project'), false);
 	assert.equal(args.includes('--new-project'), true);
+});
+
+test('failureDiagnostic: 仅含固定安全事实（无 outcome）', () => {
+	assert.equal(
+		failureDiagnostic({ stage: 'initialize', category: 'unknown' }),
+		'Product subagent failure (product: Antigravity; stage: initialize; category: unknown)',
+	);
+});
+
+test('failureDiagnostic: 补 exit code 与 signal', () => {
+	assert.equal(
+		failureDiagnostic({ stage: 'process', category: 'process', outcome: { exitCode: 1, signal: null } }),
+		'Product subagent failure (product: Antigravity; stage: process; category: process; exit code: 1)',
+	);
+	assert.equal(
+		failureDiagnostic({ stage: 'process', category: 'process', outcome: { exitCode: null, signal: 'SIGTERM' } }),
+		'Product subagent failure (product: Antigravity; stage: process; category: process; signal: SIGTERM)',
+	);
+});
+
+test('failureDiagnostic: 忽略 null/undefined outcome 与字段', () => {
+	assert.equal(
+		failureDiagnostic({ stage: 'turn', category: 'product-error', outcome: undefined }),
+		'Product subagent failure (product: Antigravity; stage: turn; category: product-error)',
+	);
+	assert.equal(
+		failureDiagnostic({ stage: 'turn', category: 'product-error', outcome: null }),
+		'Product subagent failure (product: Antigravity; stage: turn; category: product-error)',
+	);
+});
+
+test('AntigravityRunFailure: 消息只含固定安全事实，原始错误挂 cause', () => {
+	const cause = new Error('secret cwd path C:\\Users\\alice');
+	const failure = new AntigravityRunFailure({ stage: 'initialize', category: 'unknown' }, cause);
+	assert.equal(failure.name, 'AntigravityRunFailure');
+	assert.equal(
+		failure.message,
+		'subagent-antigravity: Product subagent failure (product: Antigravity; stage: initialize; category: unknown)',
+	);
+	assert.equal(failure.cause, cause);
+	assert.deepEqual(failure.facts, { stage: 'initialize', category: 'unknown' });
+});
+
+test('AntigravityRunFailure: teardown 分类携带 exit outcome', () => {
+	const failure = new AntigravityRunFailure({ stage: 'teardown', category: 'unknown', outcome: { exitCode: 137, signal: null } });
+	assert.match(failure.message, /stage: teardown/);
+	assert.match(failure.message, /exit code: 137/);
+});
+
+test('AntigravityRunFailure: 无 cause 时不设置 cause 字段', () => {
+	const failure = new AntigravityRunFailure({ stage: 'initialize', category: 'unknown' });
+	assert.equal(failure.cause, undefined);
 });

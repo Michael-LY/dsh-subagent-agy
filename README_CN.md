@@ -20,6 +20,7 @@ DSH（DeepSeek Harness）插件：把一次性任务委派给本机 **Antigravit
 - [6. 目录结构与模块分工](#6-目录结构与模块分工)
 - [7. 验证与测试](#7-验证与测试)
 - [8. 已知限制与注意事项](#8-已知限制与注意事项)
+- [9. 与官方子代理插件（Codex / Claude Code）调用方式的对比与本次优化](#9-与官方子代理插件codex--claude-code调用方式的对比与本次优化)
 
 ---
 
@@ -473,3 +474,40 @@ node -e "import('./lib/classify.js').then(({classifyFailure})=>console.log(class
 8. **`--print-timeout` 语义**：到期会返回部分输出、stderr 打 warning 并以 exit 0 退出；`printTimeout` 只是兜底截断，不能据此判断任务完整完成。
 9. **Windows 路径默认值**：默认 `executable` 是 Windows 的 `agy.exe`；迁移到 Linux/macOS 需在配置中显式指定可执行文件路径。
 10. **模型/思考选择**：菜单项随账号/版本可能变化；实时目录读取失败会回退静态目录，选择结果以 `modelApplied` / `thinkingApplied` 为准。Deep Research 内选择是否真正影响报告仍待最小 E2E 验证。
+
+---
+
+## 9. 与官方子代理插件（Codex / Claude Code）调用方式的对比与本次优化
+
+本节把 `dsh-subagent-agy`「调用 agy 作为 subagent」的方式，与两个官方 DSH 子代理插件 `@deepseek-ai/dsh-subagent-codex`、`@deepseek-ai/dsh-subagent-claude-code` 做对比，并列出本次优化的落点。全部证据（含 `文件:行号` 引用）见 [`docs/subagent-invocation-research.md`](docs/subagent-invocation-research.md)。
+
+### 9.1 同一套契约，不同的传输底座
+
+三者都在 `ctx.subagents` 上注册 provider，均为 `NO_START_CAPABILITIES`、`inheritsParentContext = false`，且 `cordis.patch.yml` 配 `maxDepth: provider-managed`；都是「一次一个全新、非交互子进程 → 发布一次性 run → 清理到静默」。差别在底座：
+
+- **Codex**：包内固定的 `app-server --stdio`，走 JSON-RPC `initialize` → `thread/start`（ephemeral）→ `turn/start`。
+- **Claude Code**：官方 Agent SDK 的 `query()`，把 SDK spawn 出的真实 CLI 交给共享 subprocess owner 托管。
+- **agy**：本机 `agy` CLI；默认 `transport: acp`（`initialize` → `session/new` → `session/prompt`），`stream-json`（`--print --output-format stream-json`）为回退/旧路径。
+
+### 9.2 关键差异
+
+| 项目 | Codex | Claude Code | agy |
+|---|---|---|---|
+| `permissionMode` 默认 | `never` | `dontAsk` | `dangerously-skip-permissions`（有意） |
+| `model` 默认 | 继承产品设置 | 继承产品设置 | 固定 `gemini-3.8-flash` |
+| 发布时机 | `initialize` + `thread/start` 成功后 | 拿到可控 CLI 句柄后 | ACP：`initialize` + `session/new` 成功后；stream-json：spawn 后 |
+| startup failure | 固定安全事实 + cause | 固定安全事实 + cause + `logger.warn` | 固定安全事实 + cause + `logger.warn` |
+| 失败诊断字段 | stage/category/HTTP/exit code/signal | stage/category/exit code/signal | stage/category/exit code/signal |
+| teardown 失败 | `stage:'teardown'` | `stage:'teardown'` | `stage:'teardown'`（stream-json 路径） |
+| 重试 / fallback | 无 | 无 | 可选，默认关闭 |
+
+### 9.3 本次优化清单
+
+1. **`lib/index.js` 结构化 startup failure**——把 `start()` 里的 cwd / executable 检查包成固定安全事实（`stage:'initialize'`、`category:'unknown'`），原始错误挂 `cause`，并用 `ctx.logger.warn` 记录；不再泄漏可执行文件的绝对路径。
+2. **`lib/run.js` 失败诊断增强**——已知进程 outcome 时追加 `exit code` / `signal`，并把 teardown 失败归类为 `stage:'teardown'`。
+3. **ACP publish-after-handshake（已核实，未改动）**——ACP 路径本就只在 `initialize` + `session/new` 成功后发布；该不变量已由既有 `test/acp-client.test.js` 的握手顺序用例覆盖（本次未新增用例）。
+4. **Config 对齐（仅讨论）**——`disposeGraceMs` 校验、`env` 默认值、`permissionMode` union 已对齐；`model` 是否允许缺省继承属产品决策（默认不改）。
+
+### 9.4 保持不变的既有设计意图
+
+既有的有意行为原样保留：默认 `permissionMode = dangerously-skip-permissions`、重试默认关闭、`exit 0` 视为成功、`SCRUBBED_ENV` 置空串（而非删除）、`transport` 默认 `acp`、`NO_START_CAPABILITIES` + `inheritsParentContext = false`。

@@ -15,7 +15,7 @@ export type AntigravityPermissionMode = 'auto' | 'dangerously-skip-permissions';
 /** Reasoning effort accepted by the Antigravity CLI. */
 export type AntigravityEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-/** Transport channel: legacy stream-json (default) or ACP JSON-RPC. */
+/** Transport channel: ACP JSON-RPC (default) or the legacy stream-json channel. */
 export type AntigravityTransport = 'stream-json' | 'acp';
 
 /** ACP permission request handling policy. */
@@ -51,7 +51,7 @@ export interface Config {
 	fallbackModel?: string;
 	/** Retry once with a short backoff when the attempt is rate-limited (HTTP 429). */
 	retryOnRateLimit?: boolean;
-	/** Transport channel; default 'stream-json' preserves existing behavior. */
+	/** Transport channel; default 'acp' (the legacy 'stream-json' channel is still supported). */
 	transport?: AntigravityTransport;
 	/** ACP protocolVersion for initialize (default 1). */
 	acpProtocolVersion?: number;
